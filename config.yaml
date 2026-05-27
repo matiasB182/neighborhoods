@@ -1,0 +1,148 @@
+# ============================================================
+# CONFIGURACIÓN DEL SISTEMA DE RECOMENDACIONES
+# ============================================================
+# Este archivo contiene TODOS los parámetros del sistema.
+# No es necesario tocar el código Python para ajustar el comportamiento.
+#
+# IMPORTANTE: Las contraseñas y hosts NO van aquí.
+# Esos datos sensibles van en el archivo .env (nunca subir al repositorio).
+# ============================================================
+
+
+# ------------------------------------------------------------
+# ANÁLISIS
+# ------------------------------------------------------------
+analisis:
+  # Columna de la tabla productos que se usa como dimensión de análisis.
+  # Opciones disponibles: familia | grupo | categoria_1
+  dimension: "familia"
+
+  # Cuántos años hacia atrás se consideran para el análisis de ventas.
+  periodo_anios: 2
+
+
+# ------------------------------------------------------------
+# ARCHIVOS DE REFERENCIA
+# ------------------------------------------------------------
+archivos:
+  # Ruta al Excel con el mapeo Vertical → Familias permitidas.
+  # Ajustar si el archivo se mueve de lugar.
+  mapeo_vertical_familia: "../familia_x_subsector.xlsx"
+
+
+# ------------------------------------------------------------
+# TABLAS DE SALIDA EN REDSHIFT
+# ------------------------------------------------------------
+# Acá se define dónde se guardan los resultados.
+# Cambiar los nombres de tabla si se quieren usar otros destinos.
+tablas_salida:
+  schema: "recomendacion"
+
+  # Tabla de rating por cliente-familia (snapshot actual)
+  rating: "cliente_dimension_rating"
+  # Tabla de rating histórico (se va acumulando)
+  rating_hist: "cliente_dimension_rating_hist"
+
+  # Modelo 1 — Upsell por Vertical
+  upsell: "recomendaciones_upsell"
+  upsell_hist: "recomendaciones_upsell_hist"
+
+  # Modelo 2 — Complementarios (Equipo → Insumos/Accesorios)
+  complementarios: "recomendaciones_complementarios"
+  complementarios_hist: "recomendaciones_complementarios_hist"
+
+  # Modelo 3 — Recencia de Insumos
+  recencia: "recomendaciones_recencia"
+  recencia_hist: "recomendaciones_recencia_hist"
+
+
+# ------------------------------------------------------------
+# CAMPAÑAS EN ODOO CRM
+# ------------------------------------------------------------
+# ID de cada campaña en Odoo. Verificar en el CRM si cambian.
+campanas_crm:
+  upsell_id: 71
+  recencia_id: 72
+  complementarios_id: 73   # Crear esta campaña en Odoo si no existe
+
+
+# ------------------------------------------------------------
+# MODELO DE RATING
+# ------------------------------------------------------------
+# El rating resume el comportamiento de compra de un cliente en una familia.
+# Va de escala_min a escala_max (por defecto 1 a 5).
+modelo_rating:
+  escala_min: 1
+  escala_max: 5
+
+  # Peso de cada métrica en el rating final. DEBEN sumar exactamente 1.0.
+  pesos:
+    frecuencia_compra: 0.15       # Con qué regularidad compra
+    recencia: 0.15                # Qué tan reciente fue la última compra
+    margen: 0.15                  # Margen total generado
+    cantidad_total: 0.10          # Unidades totales compradas
+    margen_promedio: 0.10         # Margen promedio por día de compra
+    cantidad_promedio: 0.10       # Unidades promedio por día de compra
+    cantidad_facturas_en_categoria: 0.10   # Número de facturas distintas
+    promedio_tickets_mes: 0.15    # Facturas por mes en promedio
+
+  # Para estas métricas, un valor MENOR significa un MEJOR cliente.
+  # (Ej: menos días desde la última compra = cliente más activo)
+  columnas_invertir:
+    - recencia
+    - frecuencia_compra
+
+
+# ------------------------------------------------------------
+# MODELO 1 — UPSELL POR VERTICAL
+# ------------------------------------------------------------
+# Recomienda familias que el cliente NO compra pero aplican a su sub-sector.
+modelo_upsell:
+  # Cuántas familias recomendar por cliente como máximo.
+  top_recomendaciones: 5
+
+  # Cuántos clientes similares se usan para calcular el score de cada familia.
+  clientes_similares: 30
+
+  # Similitud coseno mínima para considerar a un cliente como "similar".
+  # Rango: 0 (sin similitud) a 1 (idéntico). Valor típico: 0.1
+  similitud_minima: 0.1
+
+  # Score mínimo (escala 0-100) para marcar enviado_cliente = True.
+  # Solo la mejor recomendación con score >= este valor se envía al CRM.
+  score_minimo_envio: 50
+
+
+# ------------------------------------------------------------
+# MODELO 2 — COMPLEMENTARIOS (EQUIPO → INSUMOS/ACCESORIOS)
+# ------------------------------------------------------------
+# Si el cliente compra un EQUIPO, se recomiendan los complementarios
+# del mismo grupo que aún no compra.
+modelo_complementarios:
+  # Tipos de producto que actúan como "origen" (el cliente los compra).
+  tipos_equipo:
+    - EQUIPO
+
+  # Tipos de producto que se recomiendan como complementarios.
+  tipos_complementario:
+    - INSUMO
+    - ACCESORIO
+    - REPUESTO
+    - SERVICIO
+
+
+# ------------------------------------------------------------
+# MODELO 3 — RECENCIA DE INSUMOS
+# ------------------------------------------------------------
+# Detecta clientes que compraban insumos con regularidad y dejaron de hacerlo.
+modelo_recencia:
+  # Si no se puede calcular la frecuencia del cliente, usar este umbral en días.
+  dias_fallback: 180
+
+  # Mínimo de compras históricas para marcar enviado_cliente = True.
+  # Clientes con pocas compras previas tienen menor certeza de patrón real.
+  min_ventas_envio: 6
+
+  # Solo analizar productos de estos tipos.
+  tipos_producto:
+    - INSUMO
