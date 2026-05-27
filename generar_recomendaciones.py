@@ -20,9 +20,13 @@ Configuración:
   - Credenciales y hosts  → .env          (nunca subir al repositorio)
 
 Uso:
-  python generar_recomendaciones.py
+  python generar_recomendaciones.py                      # escribe en Redshift Y Odoo (por defecto)
+  python generar_recomendaciones.py --destino redshift   # solo escribe en Redshift, no crea leads
+  python generar_recomendaciones.py --destino odoo       # solo crea leads en Odoo, no escribe en Redshift
+  python generar_recomendaciones.py --destino ambos      # escribe en Redshift Y crea leads en Odoo
 """
 
+import argparse
 import os
 import yaml
 import numpy as np
@@ -730,10 +734,35 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
 # MAIN — ORQUESTADOR PRINCIPAL
 # ============================================================
 
+def parsear_argumentos():
+    """
+    Lee los argumentos pasados al script al momento de ejecutarlo.
+
+    --destino controla a dónde se envían los resultados:
+      redshift → calcula todo y guarda en Redshift. No toca Odoo.
+      odoo     → calcula todo y crea leads en Odoo. No escribe en Redshift.
+      ambos    → guarda en Redshift Y crea leads en Odoo (comportamiento completo).
+    """
+    parser = argparse.ArgumentParser(description="Sistema de Recomendaciones Comerciales")
+    parser.add_argument(
+        "--destino",
+        choices=["redshift", "odoo", "ambos"],
+        default="ambos",
+        help="Destino de los resultados: 'redshift', 'odoo' o 'ambos' (por defecto: ambos)",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parsear_argumentos()
+
     print("=" * 60)
     print("  SISTEMA DE RECOMENDACIONES COMERCIALES")
+    print(f"  Destino: {args.destino.upper()}")
     print("=" * 60)
+
+    escribir_redshift = args.destino in ("redshift", "ambos")
+    crear_leads       = args.destino in ("odoo", "ambos")
 
     # --- Cargar configuración ---
     cfg       = cargar_config("config.yaml")
@@ -782,6 +811,8 @@ def main():
 
     # --------------------------------------------------------
     # Conexión a Odoo y mapeo nombre-familia → ID
+    # Se conecta siempre: se necesita para obtener los family_id
+    # que se guardan tanto en Redshift como en los leads de Odoo.
     # --------------------------------------------------------
     print("\n[ ODOO ] Conectando a Odoo...")
     uid, odoo_models, odoo_db, odoo_pass = conectar_odoo()
@@ -793,11 +824,12 @@ def main():
     name_to_id    = {f["name"].strip().upper(): f["id"] for f in families_odoo}
     map_family_id = lambda name: name_to_id.get(str(name).strip().upper()) if pd.notna(name) else None
     print(f"    Familias en Odoo: {len(families_odoo)}")
+    if not crear_leads:
+        print("    (modo 'redshift': no se crearán leads)")
 
     # --------------------------------------------------------
     # PASO 4 — Guardar tabla de rating en Redshift
     # --------------------------------------------------------
-    print("\n[ PASO 4 ] Guardando rating en Redshift...")
     df_rating = (
         df_metrics
         .merge(df_clientes[["cliente_id", "razon_social", "ruc", "vertical"]], on="cliente_id", how="left")
@@ -809,8 +841,12 @@ def main():
         )
         .rename(columns={"rating_scaled": "rating_final", "vertical": "sub_sector"})
     )
-    cargar_tabla_rs(df=df_rating, tabla=schemas["rating"], esquema=schemas["schema"], overwrite_method="drop")
-    print(f"    Rating guardado: {len(df_rating):,} filas")
+    if escribir_redshift:
+        print("\n[ PASO 4 ] Guardando rating en Redshift...")
+        cargar_tabla_rs(df=df_rating, tabla=schemas["rating"], esquema=schemas["schema"], overwrite_method="drop")
+        print(f"    Rating guardado: {len(df_rating):,} filas")
+    else:
+        print("\n[ PASO 4 ] Rating calculado (no se escribe en Redshift)")
 
     # --------------------------------------------------------
     # PASO 5 — Modelo 1: Upsell por Vertical
@@ -822,7 +858,7 @@ def main():
         familias_permitidas, verticales_sin_rest, verticales_con_mapeo,
         cfg_rating["escala_min"], cfg_rating["escala_max"], map_family_id,
     )
-    if not df_upsell.empty:
+    if not df_upsell.empty and escribir_redshift:
         cargar_tabla_rs(df=df_upsell, tabla=schemas["upsell"],      esquema=schemas["schema"], overwrite_method="drop")
         cargar_y_mantener_rs(df=df_upsell, tabla=schemas["upsell_hist"], esquema=schemas["schema"])
 
@@ -834,7 +870,7 @@ def main():
         df_ventas, df_clientes, df_segmentacion,
         dim_col, cfg["modelo_complementarios"], map_family_id,
     )
-    if not df_comp.empty:
+    if not df_comp.empty and escribir_redshift:
         cargar_tabla_rs(df=df_comp, tabla=schemas["complementarios"],      esquema=schemas["schema"], overwrite_method="drop")
         cargar_y_mantener_rs(df=df_comp, tabla=schemas["complementarios_hist"], esquema=schemas["schema"])
 
@@ -846,32 +882,32 @@ def main():
         df_metrics, df_ventas, df_clientes, df_segmentacion,
         dim_col, cfg["modelo_recencia"], map_family_id,
     )
-    if not df_recencia.empty:
+    if not df_recencia.empty and escribir_redshift:
         cargar_tabla_rs(df=df_recencia, tabla=schemas["recencia"],      esquema=schemas["schema"], overwrite_method="drop")
         cargar_y_mantener_rs(df=df_recencia, tabla=schemas["recencia_hist"], esquema=schemas["schema"])
 
     # --------------------------------------------------------
     # PASO 8 — Crear leads en Odoo CRM
     # --------------------------------------------------------
-    print("\n[ PASO 8 ] Creando leads en Odoo CRM...")
-
-    crear_leads_odoo(
-        df_upsell[df_upsell["enviado_cliente"]] if not df_upsell.empty else pd.DataFrame(),
-        dim_col, uid, odoo_models, odoo_db, odoo_pass,
-        campaign_id=campanas["upsell_id"], tipo_lead="upsell", timestamp=timestamp,
-    )
-
-    crear_leads_odoo(
-        df_comp[df_comp["enviado_cliente"]] if not df_comp.empty else pd.DataFrame(),
-        dim_col, uid, odoo_models, odoo_db, odoo_pass,
-        campaign_id=campanas["complementarios_id"], tipo_lead="complementarios", timestamp=timestamp,
-    )
-
-    crear_leads_odoo(
-        df_recencia[df_recencia["enviado_cliente"]] if not df_recencia.empty else pd.DataFrame(),
-        dim_col, uid, odoo_models, odoo_db, odoo_pass,
-        campaign_id=campanas["recencia_id"], tipo_lead="recencia", timestamp=timestamp,
-    )
+    if crear_leads:
+        print("\n[ PASO 8 ] Creando leads en Odoo CRM...")
+        crear_leads_odoo(
+            df_upsell[df_upsell["enviado_cliente"]] if not df_upsell.empty else pd.DataFrame(),
+            dim_col, uid, odoo_models, odoo_db, odoo_pass,
+            campaign_id=campanas["upsell_id"], tipo_lead="upsell", timestamp=timestamp,
+        )
+        crear_leads_odoo(
+            df_comp[df_comp["enviado_cliente"]] if not df_comp.empty else pd.DataFrame(),
+            dim_col, uid, odoo_models, odoo_db, odoo_pass,
+            campaign_id=campanas["complementarios_id"], tipo_lead="complementarios", timestamp=timestamp,
+        )
+        crear_leads_odoo(
+            df_recencia[df_recencia["enviado_cliente"]] if not df_recencia.empty else pd.DataFrame(),
+            dim_col, uid, odoo_models, odoo_db, odoo_pass,
+            campaign_id=campanas["recencia_id"], tipo_lead="recencia", timestamp=timestamp,
+        )
+    else:
+        print("\n[ PASO 8 ] Omitido (modo 'redshift': no se crean leads en Odoo)")
 
     print("\n" + "=" * 60)
     print("  PROCESO COMPLETADO")
