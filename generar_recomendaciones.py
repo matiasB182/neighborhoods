@@ -20,13 +20,14 @@ Configuración:
   - Credenciales y hosts  → .env          (nunca subir al repositorio)
 
 Uso:
-  python generar_recomendaciones.py                      # escribe en Redshift Y Odoo (por defecto)
-  python generar_recomendaciones.py --destino redshift   # solo escribe en Redshift, no crea leads
-  python generar_recomendaciones.py --destino odoo       # solo crea leads en Odoo, no escribe en Redshift
-  python generar_recomendaciones.py --destino ambos      # escribe en Redshift Y crea leads en Odoo
+  python generar_recomendaciones.py
+
+  Para cambiar el destino de los resultados, modificar en config.yaml:
+    ejecucion.destino: ambos      → guarda en Redshift Y crea leads en Odoo
+    ejecucion.destino: redshift   → solo guarda en Redshift
+    ejecucion.destino: odoo       → solo crea leads en Odoo
 """
 
-import argparse
 import os
 import yaml
 import numpy as np
@@ -734,38 +735,21 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
 # MAIN — ORQUESTADOR PRINCIPAL
 # ============================================================
 
-def parsear_argumentos():
-    """
-    Lee los argumentos pasados al script al momento de ejecutarlo.
-
-    --destino controla a dónde se envían los resultados:
-      redshift → calcula todo y guarda en Redshift. No toca Odoo.
-      odoo     → calcula todo y crea leads en Odoo. No escribe en Redshift.
-      ambos    → guarda en Redshift Y crea leads en Odoo (comportamiento completo).
-    """
-    parser = argparse.ArgumentParser(description="Sistema de Recomendaciones Comerciales")
-    parser.add_argument(
-        "--destino",
-        choices=["redshift", "odoo", "ambos"],
-        default="ambos",
-        help="Destino de los resultados: 'redshift', 'odoo' o 'ambos' (por defecto: ambos)",
-    )
-    return parser.parse_args()
-
-
 def main():
-    args = parsear_argumentos()
+    cfg = cargar_config("config.yaml")
+
+    destino = cfg["ejecucion"]["destino"]
+    if destino not in ("redshift", "odoo", "ambos"):
+        raise ValueError(f"Valor inválido en config.yaml → ejecucion.destino: '{destino}'. Usar: redshift | odoo | ambos")
+
+    escribir_redshift = destino in ("redshift", "ambos")
+    crear_leads       = destino in ("odoo", "ambos")
 
     print("=" * 60)
     print("  SISTEMA DE RECOMENDACIONES COMERCIALES")
-    print(f"  Destino: {args.destino.upper()}")
+    print(f"  Destino: {destino.upper()}")
     print("=" * 60)
 
-    escribir_redshift = args.destino in ("redshift", "ambos")
-    crear_leads       = args.destino in ("odoo", "ambos")
-
-    # --- Cargar configuración ---
-    cfg       = cargar_config("config.yaml")
     rs        = get_redshift_params()
     dim_col   = cfg["analisis"]["dimension"]
     schemas   = cfg["tablas_salida"]
@@ -781,7 +765,7 @@ def main():
     print(f"\n  Período:   {fecha_inicio} → {fecha_corte_str}")
     print(f"  Dimensión: {dim_col}\n")
 
-    # --------------------------------------------------------
+    # ---------------------------------------------------------
     # PASO 1 — Extracción de datos
     # --------------------------------------------------------
     print("[ PASO 1 ] Extrayendo datos de Redshift...")

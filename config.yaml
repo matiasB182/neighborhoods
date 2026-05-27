@@ -10,6 +10,18 @@
 
 
 # ------------------------------------------------------------
+# EJECUCIÓN
+# ------------------------------------------------------------
+ejecucion:
+  # Controla a dónde se envían los resultados al correr el script.
+  # Opciones:
+  #   ambos    → guarda en Redshift Y crea leads en Odoo (comportamiento completo)
+  #   redshift → solo guarda en Redshift, no toca Odoo
+  #   odoo     → solo crea leads en Odoo, no escribe en Redshift
+  destino: "ambos"
+
+
+# ------------------------------------------------------------
 # ANÁLISIS
 # ------------------------------------------------------------
 analisis:
