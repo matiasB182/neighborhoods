@@ -39,7 +39,10 @@ analisis:
 archivos:
   # Ruta al Excel con el mapeo Vertical → Familias permitidas.
   # Ajustar si el archivo se mueve de lugar.
-  mapeo_vertical_familia: "../familia_x_subsector.xlsx"
+  # Ruta al Excel, relativa a la carpeta donde está el script.
+  # Si el Excel está en la misma carpeta: "familia_x_subsector.xlsx"
+  # Si está un nivel arriba: "../familia_x_subsector.xlsx"
+  mapeo_vertical_familia: "familia_x_subsector.xlsx"
 
 
 # ------------------------------------------------------------

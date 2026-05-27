@@ -189,7 +189,7 @@ def cargar_mapeo_vertical_familia(ruta_excel):
         (pueden recibir cualquier familia)
       - verticales_con_mapeo: verticales que sí tienen restricción definida
     """
-    df = pd.read_excel(ruta_excel)
+    df = pd.read_excel(ruta_excel, engine="openpyxl")
     df.columns = ["vertical", "familia"]
 
     df["vertical"] = df["vertical"].ffill().str.strip().str.upper()
