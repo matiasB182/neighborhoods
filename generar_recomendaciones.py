@@ -134,14 +134,18 @@ def extraer_ventas(rs_params, dimension_col, fecha_inicio, fecha_corte):
           AND v.cliente_id    IS NOT NULL
           AND p.{dimension_col} IS NOT NULL
           AND TRIM(p.{dimension_col}) != ''
+          AND p.grupo IS NOT NULL
+          AND TRIM(p.grupo) != ''
+          AND UPPER(TRIM(p.grupo)) NOT IN ('FALSE', 'SIN DATOS', 'SIN GRUPO')
           AND v.tipo_transaccion = 'V'
           AND v.monto_venta   > 0
     """
     df = run_redshift_query(**rs_params, query=query)
 
-    # Descartar filas con dimensión sin datos válidos
+    # Descartar filas con dimensión o grupo sin datos válidos
     valores_invalidos = {f"SIN_{dimension_col.upper()}", "SIN DATOS", "FALSE"}
     df = df[~df[dimension_col].isin(valores_invalidos)]
+    df = df[~df["grupo_producto"].isin({"FALSE", "SIN DATOS", "SIN GRUPO"})]
 
     print(f"    Ventas: {len(df):,} filas | {df['cliente_id'].nunique():,} clientes únicos")
     return df
