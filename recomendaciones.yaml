@@ -146,7 +146,8 @@ modelo_complementarios:
     - SERVICIO
 
   # Máximo de grupos complementarios por cliente que se envían al CRM.
-  # Se priorizan los de mayor co-ocurrencia (más frecuentemente comprados juntos).
+  # Se priorizan por co-ocurrencia: % de clientes con ese equipo que también
+  # tienen historial de compra del grupo complementario (no necesariamente en la misma factura).
   top_grupos_odoo: 3
 
 
