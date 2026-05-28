@@ -574,16 +574,19 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
     df_comp["family_id"]           = df_comp[dimension_col].apply(map_family_id_fn)
     df_comp["enviado_cliente"]     = True   # cada grupo es una recomendación específica y accionable
     df_comp["fecha_actualizacion"] = pd.Timestamp.now()
-    df_comp = df_comp.rename(columns={"vertical": "sub_sector"})
+    df_comp = df_comp.rename(columns={
+        "vertical":      "sub_sector",
+        "grupo_origen":  "grupo_recomendado",  # Es el mismo grupo: cliente tiene EQUIPO ahí y le faltan otros tipos
+    })
 
     df_comp = df_comp[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
-        "family_id", dimension_col, "grupo_origen", "tipos_disponibles",
+        "family_id", dimension_col, "grupo_recomendado", "tipos_disponibles",
         "ranking", "enviado_cliente",
         "nombre_segmento", "fecha_actualizacion",
     ]]
 
-    print(f"    Complementarios — {len(df_comp):,} recomendaciones | Grupos únicos: {df_comp['grupo_origen'].nunique()}")
+    print(f"    Complementarios — {len(df_comp):,} recomendaciones | Grupos únicos: {df_comp['grupo_recomendado'].nunique()}")
     return df_comp
 
 
@@ -703,7 +706,7 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
             continue
 
         if tipo_lead == "complementarios":
-            nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row.get('grupo_origen', '')} - {timestamp}"
+            nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row.get('grupo_recomendado', '')} - {timestamp}"
         else:
             nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row[dimension_col]} - {timestamp}"
 
@@ -718,7 +721,7 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
             descripcion = f"Tipo: recencia | Días sin compra: {dias} | Frecuencia habitual: {freq:.0f} días"
             campos_extra = {}
         else:  # complementarios
-            grupo  = row.get("grupo_origen", "")
+            grupo  = row.get("grupo_recomendado", "")
             tipos  = row.get("tipos_disponibles", "")
             descripcion = f"Tipo: complementario | Grupo: {grupo} | Tipos a ofrecer: {tipos}"
             campos_extra = {}
