@@ -22,7 +22,7 @@ Configuración:
 Uso:
   python generar_recomendaciones.py
 
-  Para cambiar el destino de los resultados, modificar en config.yaml:
+  Para cambiar el destino de los resultados, modificar en recomendaciones.yaml:
     ejecucion.destino: ambos      → guarda en Redshift Y crea leads en Odoo
     ejecucion.destino: redshift   → solo guarda en Redshift
     ejecucion.destino: odoo       → solo crea leads en Odoo
@@ -50,7 +50,7 @@ from utils_redshift import cargar_y_mantener_rs, cargar_tabla_rs
 load_dotenv()
 
 
-def cargar_config(ruta="config.yaml"):
+def cargar_config(ruta="recomendaciones.yaml"):
     """Lee el archivo config.yaml y devuelve todos los parámetros."""
     with open(ruta, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -736,7 +736,7 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
 # ============================================================
 
 def main():
-    cfg = cargar_config("config.yaml")
+    cfg = cargar_config("recomendaciones.yaml")
 
     destino = cfg["ejecucion"]["destino"]
     if destino not in ("redshift", "odoo", "ambos"):
