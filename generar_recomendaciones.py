@@ -59,14 +59,17 @@ def cargar_config(ruta="recomendaciones.yaml"):
 def get_redshift_params():
     """
     Lee los datos de conexión a Redshift desde el archivo .env.
+    Los nombres de variables deben coincidir con los que usa utils_redshift.py:
+      RS_HOST, RS_PORT, RS_DATABASE, RS_USERNAME, RS_PASSWORD
+
     Si falta alguno, lanza un error claro indicando cuál falta.
     """
     params = {
-        "host":     os.getenv("REDSHIFT_HOST"),
-        "port":     int(os.getenv("REDSHIFT_PORT", 5439)),
-        "database": os.getenv("REDSHIFT_DB"),
-        "user":     os.getenv("REDSHIFT_USER"),
-        "password": os.getenv("REDSHIFT_PASS"),
+        "host":     os.getenv("RS_HOST"),
+        "port":     int(os.getenv("RS_PORT", 5439)),
+        "database": os.getenv("RS_DATABASE"),
+        "user":     os.getenv("RS_USERNAME"),
+        "password": os.getenv("RS_PASSWORD"),
     }
     faltantes = [k for k, v in params.items() if not v]
     if faltantes:
