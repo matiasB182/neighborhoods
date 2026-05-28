@@ -491,26 +491,23 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
     Modelo 2 — Productos Complementarios.
 
     Para cada cliente que compra un EQUIPO:
-      1. Identifica el grupo del equipo (ej: "CODIFICACIÓN TTO").
-      2. Busca qué tipos complementarios (ACCESORIO, INSUMO, etc.) existen en ese grupo.
-      3. Si el cliente NO compra esos tipos en ese grupo → recomendación por grupo.
-
-    La recomendación es a nivel GRUPO porque el vendedor necesita saber exactamente
-    qué complementarios ofrecer, no solo la familia genérica.
+      1. Identifica el grupo del equipo (ej: "RELOJES") y su familia (ej: "MEDICION").
+      2. En esa misma familia busca grupos con tipo INSUMO/ACCESORIO (ej: "PILAS").
+      3. Si el cliente NO compra ese grupo → recomendación generada.
 
     Ejemplo:
-      Cliente compra EQUIPO en grupo "CODIFICACIÓN TTO"
-      → Existen INSUMO y ACCESORIO en ese grupo
-      → El cliente no compra INSUMO en ese grupo
-      → Lead: "Complementarios - CLIENTE - CODIFICACIÓN TTO"
-         Descripción: "Grupo: CODIFICACIÓN TTO | Tipos a ofrecer: INSUMO"
+      Cliente compra grupo "RELOJES" (tipo EQUIPO, familia "MEDICION")
+      → En familia "MEDICION" también existe grupo "PILAS" (tipo INSUMO)
+      → El cliente no compra "PILAS"
+      → Lead: "Complementarios - CLIENTE - RELOJES"
+         Descripción: "Equipo: RELOJES | Ofrecer: PILAS"
     """
     tipos_equipo = set(t.upper() for t in cfg_comp["tipos_equipo"])
     tipos_comp   = set(t.upper() for t in cfg_comp["tipos_complementario"])
 
     df = df_ventas.copy()
 
-    # Grupos donde cada cliente compra equipos
+    # Grupos EQUIPO que cada cliente compra
     equipos_cliente = (
         df[df["tipo_producto"].isin(tipos_equipo)]
         .groupby("cliente_id")["grupo_producto"]
@@ -518,46 +515,48 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
         .to_dict()
     )
 
-    # Para cada grupo: qué tipos complementarios existen en el catálogo
-    tipos_comp_por_grupo = (
+    # Para cada grupo EQUIPO: su familia (link entre equipo y complementarios)
+    familia_de_grupo_equipo = (
+        df[df["tipo_producto"].isin(tipos_equipo)]
+        .drop_duplicates("grupo_producto")
+        .set_index("grupo_producto")[dimension_col]
+        .to_dict()
+    )
+
+    # Para cada familia: qué grupos INSUMO/ACCESORIO existen en el catálogo
+    grupos_comp_por_familia = (
         df[df["tipo_producto"].isin(tipos_comp)]
-        .groupby("grupo_producto")["tipo_producto"]
+        .groupby(dimension_col)["grupo_producto"]
         .apply(set)
         .to_dict()
     )
 
-    # Para cada grupo: su familia (para el family_id de Odoo)
-    familia_por_grupo = (
-        df.groupby("grupo_producto")[dimension_col]
-        .first()
-        .to_dict()
-    )
-
-    # Tipos que cada cliente compra por grupo (para detectar qué le falta)
-    grupos_tipos_cliente = (
-        df.groupby(["cliente_id", "grupo_producto"])["tipo_producto"]
+    # Grupos que cada cliente ya compra (para saber qué NO le falta)
+    grupos_por_cliente = (
+        df.groupby("cliente_id")["grupo_producto"]
         .apply(set)
         .to_dict()
     )
 
     all_recs = []
     for cliente, grupos_equipo in equipos_cliente.items():
-        for grupo in grupos_equipo:
-            tipos_comp_en_grupo = tipos_comp_por_grupo.get(grupo, set())
-            if not tipos_comp_en_grupo:
+        grupos_ya_compra = grupos_por_cliente.get(cliente, set())
+
+        for grupo_equipo in grupos_equipo:
+            familia = familia_de_grupo_equipo.get(grupo_equipo, "")
+            if not familia:
                 continue
 
-            # Qué tipos complementarios NO compra el cliente en este grupo
-            tipos_cliente_en_grupo = grupos_tipos_cliente.get((cliente, grupo), set())
-            tipos_faltantes = tipos_comp_en_grupo - tipos_cliente_en_grupo
+            # Grupos complementarios en esa familia que el cliente no compra
+            grupos_comp_en_familia = grupos_comp_por_familia.get(familia, set())
+            grupos_faltantes = grupos_comp_en_familia - grupos_ya_compra
 
-            if tipos_faltantes:
+            if grupos_faltantes:
                 all_recs.append({
-                    "cliente_id":        cliente,
-                    "grupo_origen":      grupo,
-                    dimension_col:       familia_por_grupo.get(grupo, ""),  # para family_id
-                    "tipos_comprados":   ", ".join(sorted(tipos_cliente_en_grupo)),
-                    "tipos_disponibles": ", ".join(sorted(tipos_faltantes)),
+                    "cliente_id":       cliente,
+                    "grupo_equipo":     grupo_equipo,
+                    dimension_col:      familia,                          # familia compartida → family_id Odoo
+                    "grupos_a_ofrecer": ", ".join(sorted(grupos_faltantes)),
                 })
 
     if not all_recs:
@@ -575,19 +574,16 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
     df_comp["family_id"]           = df_comp[dimension_col].apply(map_family_id_fn)
     df_comp["enviado_cliente"]     = True   # cada grupo es una recomendación específica y accionable
     df_comp["fecha_actualizacion"] = pd.Timestamp.now()
-    df_comp = df_comp.rename(columns={
-        "vertical":      "sub_sector",
-        "grupo_origen":  "grupo_recomendado",  # Es el mismo grupo: cliente tiene EQUIPO ahí y le faltan otros tipos
-    })
+    df_comp = df_comp.rename(columns={"vertical": "sub_sector"})
 
     df_comp = df_comp[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
-        "family_id", dimension_col, "grupo_recomendado", "tipos_comprados", "tipos_disponibles",
+        "family_id", dimension_col, "grupo_equipo", "grupos_a_ofrecer",
         "ranking", "enviado_cliente",
         "nombre_segmento", "fecha_actualizacion",
     ]]
 
-    print(f"    Complementarios — {len(df_comp):,} recomendaciones | Grupos únicos: {df_comp['grupo_recomendado'].nunique()}")
+    print(f"    Complementarios — {len(df_comp):,} recomendaciones | Grupos equipo únicos: {df_comp['grupo_equipo'].nunique()}")
     return df_comp
 
 
@@ -707,7 +703,7 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
             continue
 
         if tipo_lead == "complementarios":
-            nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row.get('grupo_recomendado', '')} - {timestamp}"
+            nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row.get('grupo_equipo', '')} - {timestamp}"
         else:
             nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row[dimension_col]} - {timestamp}"
 
@@ -722,9 +718,9 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
             descripcion = f"Tipo: recencia | Días sin compra: {dias} | Frecuencia habitual: {freq:.0f} días"
             campos_extra = {}
         else:  # complementarios
-            grupo  = row.get("grupo_recomendado", "")
-            tipos  = row.get("tipos_disponibles", "")
-            descripcion = f"Tipo: complementario | Grupo: {grupo} | Tipos a ofrecer: {tipos}"
+            grupo_eq = row.get("grupo_equipo", "")
+            grupos   = row.get("grupos_a_ofrecer", "")
+            descripcion = f"Tipo: complementario | Equipo: {grupo_eq} | Ofrecer: {grupos}"
             campos_extra = {}
 
         lead_vals = {
