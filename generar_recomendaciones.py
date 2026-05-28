@@ -503,9 +503,10 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
       → Lead: "Complementarios - CLIENTE - RELOJES → PILAS"
          Descripción: "Equipo: RELOJES | Ofrecer: PILAS | Confianza: 72.0%"
     """
-    tipos_equipo = set(t.upper() for t in cfg_comp["tipos_equipo"])
-    tipos_comp   = set(t.upper() for t in cfg_comp["tipos_complementario"])
-    top_odoo     = cfg_comp.get("top_grupos_odoo", 3)
+    tipos_equipo    = set(t.upper() for t in cfg_comp["tipos_equipo"])
+    tipos_comp      = set(t.upper() for t in cfg_comp["tipos_complementario"])
+    top_odoo        = cfg_comp.get("top_grupos_odoo", 3)
+    conf_minima     = cfg_comp.get("confianza_minima", 0.10)
 
     df = df_ventas.copy()
 
@@ -563,6 +564,8 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
             for grupo_comp in grupos_faltantes:
                 c_comp    = clientes_por_grupo.get(grupo_comp, set())
                 confianza = len(c_equipo & c_comp) / len(c_equipo) if c_equipo else 0.0
+                if confianza < conf_minima:
+                    continue
                 all_recs.append({
                     "cliente_id":   cliente,
                     "grupo_equipo": grupo_equipo,

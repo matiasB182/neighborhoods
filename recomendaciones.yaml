@@ -146,9 +146,22 @@ modelo_complementarios:
     - SERVICIO
 
   # Máximo de grupos complementarios por cliente que se envían al CRM.
-  # Se priorizan por co-ocurrencia: % de clientes con ese equipo que también
-  # tienen historial de compra del grupo complementario (no necesariamente en la misma factura).
+  # Se priorizan por confianza: los pares con mayor co-ocurrencia van primero.
   top_grupos_odoo: 3
+
+  # Confianza mínima para incluir un par (grupo_equipo → grupo_comp) como recomendación.
+  # La confianza mide: de todos los clientes que compraron el grupo_equipo,
+  # qué porcentaje también compró el grupo_comp en algún momento de su historial
+  # (no necesariamente en la misma factura).
+  #
+  # Ejemplo: si 100 clientes compran RELOJES y 65 de ellos también compraron PILAS,
+  # la confianza del par RELOJES → PILAS es 0.65 (65%).
+  #
+  # Valores orientativos:
+  #   0.10 → incluye pares con al menos 10% de co-ocurrencia (más recomendaciones, menor certeza)
+  #   0.30 → equilibrio recomendado
+  #   0.50 → solo pares muy consolidados (menos recomendaciones, mayor certeza)
+  confianza_minima: 0.10
 
 
 # ------------------------------------------------------------
