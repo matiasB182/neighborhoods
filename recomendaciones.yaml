@@ -145,6 +145,10 @@ modelo_complementarios:
     - REPUESTO
     - SERVICIO
 
+  # Máximo de grupos complementarios por cliente que se envían al CRM.
+  # Se priorizan los de mayor co-ocurrencia (más frecuentemente comprados juntos).
+  top_grupos_odoo: 3
+
 
 # ------------------------------------------------------------
 # MODELO 3 — RECENCIA DE INSUMOS

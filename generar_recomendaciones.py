@@ -493,17 +493,19 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
     Para cada cliente que compra un EQUIPO:
       1. Identifica el grupo del equipo (ej: "RELOJES") y su familia (ej: "MEDICION").
       2. En esa misma familia busca grupos con tipo INSUMO/ACCESORIO (ej: "PILAS").
-      3. Si el cliente NO compra ese grupo → recomendación generada.
+      3. Si el cliente NO compra ese grupo, calcula la confianza de co-ocurrencia:
+         % de clientes con ese equipo que también compran ese grupo complementario.
+      4. Rankea globalmente por cliente y envía al CRM el top N (top_grupos_odoo).
 
     Ejemplo:
       Cliente compra grupo "RELOJES" (tipo EQUIPO, familia "MEDICION")
-      → En familia "MEDICION" también existe grupo "PILAS" (tipo INSUMO)
-      → El cliente no compra "PILAS"
-      → Lead: "Complementarios - CLIENTE - RELOJES"
-         Descripción: "Equipo: RELOJES | Ofrecer: PILAS"
+      → En familia "MEDICION" existe "PILAS" (INSUMO), confianza 72%
+      → Lead: "Complementarios - CLIENTE - RELOJES → PILAS"
+         Descripción: "Equipo: RELOJES | Ofrecer: PILAS | Confianza: 72.0%"
     """
     tipos_equipo = set(t.upper() for t in cfg_comp["tipos_equipo"])
     tipos_comp   = set(t.upper() for t in cfg_comp["tipos_complementario"])
+    top_odoo     = cfg_comp.get("top_grupos_odoo", 3)
 
     df = df_ventas.copy()
 
@@ -531,9 +533,16 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
         .to_dict()
     )
 
-    # Grupos que cada cliente ya compra (para saber qué NO le falta)
+    # Grupos que cada cliente ya compra
     grupos_por_cliente = (
         df.groupby("cliente_id")["grupo_producto"]
+        .apply(set)
+        .to_dict()
+    )
+
+    # Co-ocurrencia: clientes que compran cada grupo (para calcular confianza)
+    clientes_por_grupo = (
+        df.groupby("grupo_producto")["cliente_id"]
         .apply(set)
         .to_dict()
     )
@@ -547,16 +556,19 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
             if not familia:
                 continue
 
-            # Grupos complementarios en esa familia que el cliente no compra
             grupos_comp_en_familia = grupos_comp_por_familia.get(familia, set())
             grupos_faltantes = grupos_comp_en_familia - grupos_ya_compra
 
-            if grupos_faltantes:
+            c_equipo = clientes_por_grupo.get(grupo_equipo, set())
+            for grupo_comp in grupos_faltantes:
+                c_comp    = clientes_por_grupo.get(grupo_comp, set())
+                confianza = len(c_equipo & c_comp) / len(c_equipo) if c_equipo else 0.0
                 all_recs.append({
-                    "cliente_id":       cliente,
-                    "grupo_equipo":     grupo_equipo,
-                    dimension_col:      familia,                          # familia compartida → family_id Odoo
-                    "grupos_a_ofrecer": ", ".join(sorted(grupos_faltantes)),
+                    "cliente_id":   cliente,
+                    "grupo_equipo": grupo_equipo,
+                    "grupo_comp":   grupo_comp,
+                    dimension_col:  familia,
+                    "confianza":    round(confianza, 4),
                 })
 
     if not all_recs:
@@ -564,6 +576,9 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
         return pd.DataFrame()
 
     df_comp = pd.DataFrame(all_recs)
+
+    # Ranking global por cliente ordenado por confianza (mayor confianza = mejor rec)
+    df_comp = df_comp.sort_values(["cliente_id", "confianza"], ascending=[True, False])
     df_comp["ranking"] = df_comp.groupby("cliente_id").cumcount() + 1
 
     # Enriquecer con datos del cliente
@@ -572,18 +587,18 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
         .merge(df_segmentacion[["cliente_id", "nombre_segmento"]],             on="cliente_id", how="left")
     )
     df_comp["family_id"]           = df_comp[dimension_col].apply(map_family_id_fn)
-    df_comp["enviado_cliente"]     = True   # cada grupo es una recomendación específica y accionable
+    df_comp["enviado_cliente"]     = df_comp["ranking"] <= top_odoo
     df_comp["fecha_actualizacion"] = pd.Timestamp.now()
     df_comp = df_comp.rename(columns={"vertical": "sub_sector"})
 
     df_comp = df_comp[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
-        "family_id", dimension_col, "grupo_equipo", "grupos_a_ofrecer",
+        "family_id", dimension_col, "grupo_equipo", "grupo_comp", "confianza",
         "ranking", "enviado_cliente",
         "nombre_segmento", "fecha_actualizacion",
     ]]
 
-    print(f"    Complementarios — {len(df_comp):,} recomendaciones | Grupos equipo únicos: {df_comp['grupo_equipo'].nunique()}")
+    print(f"    Complementarios — {len(df_comp):,} recomendaciones | Enviadas al CRM: {df_comp['enviado_cliente'].sum():,}")
     return df_comp
 
 
@@ -703,7 +718,7 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
             continue
 
         if tipo_lead == "complementarios":
-            nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row.get('grupo_equipo', '')} - {timestamp}"
+            nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row.get('grupo_equipo', '')} → {row.get('grupo_comp', '')} - {timestamp}"
         else:
             nombre = f"{tipo_lead.capitalize()} - {row.get('razon_social', '')} - {row[dimension_col]} - {timestamp}"
 
@@ -718,9 +733,10 @@ def crear_leads_odoo(df_enviar, dimension_col, uid, models, odoo_db, odoo_pass,
             descripcion = f"Tipo: recencia | Días sin compra: {dias} | Frecuencia habitual: {freq:.0f} días"
             campos_extra = {}
         else:  # complementarios
-            grupo_eq = row.get("grupo_equipo", "")
-            grupos   = row.get("grupos_a_ofrecer", "")
-            descripcion = f"Tipo: complementario | Equipo: {grupo_eq} | Ofrecer: {grupos}"
+            grupo_eq  = row.get("grupo_equipo", "")
+            grupo_co  = row.get("grupo_comp", "")
+            confianza = float(row.get("confianza", 0)) * 100
+            descripcion = f"Tipo: complementario | Equipo: {grupo_eq} | Ofrecer: {grupo_co} | Confianza: {confianza:.1f}%"
             campos_extra = {}
 
         lead_vals = {
