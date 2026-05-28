@@ -556,6 +556,7 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
                     "cliente_id":        cliente,
                     "grupo_origen":      grupo,
                     dimension_col:       familia_por_grupo.get(grupo, ""),  # para family_id
+                    "tipos_comprados":   ", ".join(sorted(tipos_cliente_en_grupo)),
                     "tipos_disponibles": ", ".join(sorted(tipos_faltantes)),
                 })
 
@@ -581,7 +582,7 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
 
     df_comp = df_comp[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
-        "family_id", dimension_col, "grupo_recomendado", "tipos_disponibles",
+        "family_id", dimension_col, "grupo_recomendado", "tipos_comprados", "tipos_disponibles",
         "ranking", "enviado_cliente",
         "nombre_segmento", "fecha_actualizacion",
     ]]
