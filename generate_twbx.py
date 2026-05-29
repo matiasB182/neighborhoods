@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genera Tableau Packaged Workbook (.twbx) — Tablero Recomendaciones Comerciales v3"""
+"""Genera Tableau Packaged Workbook (.twbx) — Tablero Recomendaciones Comerciales v4"""
 
 import zipfile
 import os
@@ -18,23 +18,17 @@ COMPLEMENTARIOS_CSV = 'recomendaciones_complementarios.csv'
 
 # ─── HELPERS ────────────────────────────────────────────────────────────────
 
-def col(caption, name, datatype, role, col_type):
-    """Column definition in datasource."""
+def ds_col(caption, name, datatype, role, col_type):
+    """Column definition in <datasource>."""
     return f"    <column caption='{caption}' datatype='{datatype}' name='[{name}]' role='{role}' type='{col_type}'/>"
 
-def col_ref(name):
-    """Bare column reference inside datasource-dependencies (no extra attrs needed)."""
-    return f"          <column name='[{name}]'/>"
+def dep_col(name, datatype, role, col_type):
+    """Column reference inside <datasource-dependencies> — needs role/type/datatype."""
+    return f"          <column datatype='{datatype}' name='[{name}]' role='{role}' type='{col_type}'/>"
 
 def col_inst(field, deriv, inst_name, inst_type):
-    """Column instance: only column, derivation, name, pivot, type — no role/datatype."""
+    """Column-instance: only column/derivation/name/pivot/type — no role, no datatype."""
     return f"          <column-instance column='[{field}]' derivation='{deriv}' name='{inst_name}' pivot='key' type='{inst_type}'/>"
-
-VIEW_REQUIRED_TAIL = """\
-      <filter/>
-      <sort/>
-      <perspectives/>
-      <aggregation value='true'/>"""
 
 
 # ─── DATASOURCES ────────────────────────────────────────────────────────────
@@ -44,19 +38,19 @@ def ds_upsell():
     <connection class='textscan' filename='./Data/Datasources/{UPSELL_CSV}' locale='es_PY' separator=',' start-of-week='sunday'>
       <relation name='{UPSELL_CSV}' table='[recomendaciones_upsell#csv]' type='table' />
     </connection>
-{col('ID Cliente',          'cliente_id',         'string',   'dimension', 'nominal')}
-{col('Razón Social',        'razon_social',        'string',   'dimension', 'nominal')}
-{col('RUC',                 'ruc',                 'string',   'dimension', 'nominal')}
-{col('Sub Sector',          'sub_sector',          'string',   'dimension', 'nominal')}
-{col('Family ID',           'family_id',           'integer',  'dimension', 'ordinal')}
-{col('Familia',             'familia',             'string',   'dimension', 'nominal')}
-{col('Equipo Actual',       'grupo_equipo',        'string',   'dimension', 'nominal')}
-{col('Recomendación',       'grupo_comp',          'string',   'dimension', 'nominal')}
-{col('Confianza',           'confianza',           'real',     'measure',   'quantitative')}
-{col('Ranking',             'ranking',             'integer',  'dimension', 'ordinal')}
-{col('Enviado al Cliente',  'enviado_cliente',     'boolean',  'dimension', 'nominal')}
-{col('Segmento',            'nombre_segmento',     'string',   'dimension', 'nominal')}
-{col('Fecha Actualización', 'fecha_actualizacion', 'datetime', 'dimension', 'ordinal')}
+{ds_col('ID Cliente',          'cliente_id',         'string',   'dimension', 'nominal')}
+{ds_col('Razón Social',        'razon_social',        'string',   'dimension', 'nominal')}
+{ds_col('RUC',                 'ruc',                 'string',   'dimension', 'nominal')}
+{ds_col('Sub Sector',          'sub_sector',          'string',   'dimension', 'nominal')}
+{ds_col('Family ID',           'family_id',           'integer',  'dimension', 'ordinal')}
+{ds_col('Familia',             'familia',             'string',   'dimension', 'nominal')}
+{ds_col('Equipo Actual',       'grupo_equipo',        'string',   'dimension', 'nominal')}
+{ds_col('Recomendación',       'grupo_comp',          'string',   'dimension', 'nominal')}
+{ds_col('Confianza',           'confianza',           'real',     'measure',   'quantitative')}
+{ds_col('Ranking',             'ranking',             'integer',  'dimension', 'ordinal')}
+{ds_col('Enviado al Cliente',  'enviado_cliente',     'boolean',  'dimension', 'nominal')}
+{ds_col('Segmento',            'nombre_segmento',     'string',   'dimension', 'nominal')}
+{ds_col('Fecha Actualización', 'fecha_actualizacion', 'datetime', 'dimension', 'ordinal')}
     <column caption='Number of Records' datatype='integer' hidden='true' name='[Number of Records]' role='measure' type='quantitative'>
       <calculation class='tableau' formula='1'/>
     </column>
@@ -68,20 +62,20 @@ def ds_recencia():
     <connection class='textscan' filename='./Data/Datasources/{RECENCIA_CSV}' locale='es_PY' separator=',' start-of-week='sunday'>
       <relation name='{RECENCIA_CSV}' table='[recomendaciones_recencia#csv]' type='table' />
     </connection>
-{col('ID Cliente',               'cliente_id',         'string',   'dimension', 'nominal')}
-{col('Razón Social',             'razon_social',        'string',   'dimension', 'nominal')}
-{col('RUC',                      'ruc',                 'string',   'dimension', 'nominal')}
-{col('Sub Sector',               'sub_sector',          'string',   'dimension', 'nominal')}
-{col('Family ID',                'family_id',           'integer',  'dimension', 'ordinal')}
-{col('Familia',                  'familia',             'string',   'dimension', 'nominal')}
-{col('Días sin Comprar',         'recencia',            'integer',  'measure',   'quantitative')}
-{col('Frecuencia Compra (días)', 'frecuencia_compra',   'real',     'measure',   'quantitative')}
-{col('Nro. Ventas',              'nro_ventas',          'integer',  'measure',   'quantitative')}
-{col('Score Recencia',           'score_recencia',      'real',     'measure',   'quantitative')}
-{col('Ranking',                  'ranking',             'integer',  'dimension', 'ordinal')}
-{col('Enviado al Cliente',       'enviado_cliente',     'boolean',  'dimension', 'nominal')}
-{col('Segmento',                 'nombre_segmento',     'string',   'dimension', 'nominal')}
-{col('Fecha Actualización',      'fecha_actualizacion', 'datetime', 'dimension', 'ordinal')}
+{ds_col('ID Cliente',               'cliente_id',         'string',   'dimension', 'nominal')}
+{ds_col('Razón Social',             'razon_social',        'string',   'dimension', 'nominal')}
+{ds_col('RUC',                      'ruc',                 'string',   'dimension', 'nominal')}
+{ds_col('Sub Sector',               'sub_sector',          'string',   'dimension', 'nominal')}
+{ds_col('Family ID',                'family_id',           'integer',  'dimension', 'ordinal')}
+{ds_col('Familia',                  'familia',             'string',   'dimension', 'nominal')}
+{ds_col('Días sin Comprar',         'recencia',            'integer',  'measure',   'quantitative')}
+{ds_col('Frecuencia Compra (días)', 'frecuencia_compra',   'real',     'measure',   'quantitative')}
+{ds_col('Nro. Ventas',              'nro_ventas',          'integer',  'measure',   'quantitative')}
+{ds_col('Score Recencia',           'score_recencia',      'real',     'measure',   'quantitative')}
+{ds_col('Ranking',                  'ranking',             'integer',  'dimension', 'ordinal')}
+{ds_col('Enviado al Cliente',       'enviado_cliente',     'boolean',  'dimension', 'nominal')}
+{ds_col('Segmento',                 'nombre_segmento',     'string',   'dimension', 'nominal')}
+{ds_col('Fecha Actualización',      'fecha_actualizacion', 'datetime', 'dimension', 'ordinal')}
     <column caption='Number of Records' datatype='integer' hidden='true' name='[Number of Records]' role='measure' type='quantitative'>
       <calculation class='tableau' formula='1'/>
     </column>
@@ -93,19 +87,19 @@ def ds_complementarios():
     <connection class='textscan' filename='./Data/Datasources/{COMPLEMENTARIOS_CSV}' locale='es_PY' separator=',' start-of-week='sunday'>
       <relation name='{COMPLEMENTARIOS_CSV}' table='[recomendaciones_complementarios#csv]' type='table' />
     </connection>
-{col('ID Cliente',              'cliente_id',         'string',   'dimension', 'nominal')}
-{col('Razón Social',            'razon_social',        'string',   'dimension', 'nominal')}
-{col('RUC',                     'ruc',                 'string',   'dimension', 'nominal')}
-{col('Sub Sector',              'sub_sector',          'string',   'dimension', 'nominal')}
-{col('Family ID',               'family_id',           'integer',  'dimension', 'ordinal')}
-{col('Familia',                 'familia',             'string',   'dimension', 'nominal')}
-{col('Equipo Actual',           'grupo_equipo',        'string',   'dimension', 'nominal')}
-{col('Prod. Complementario',    'grupo_comp',          'string',   'dimension', 'nominal')}
-{col('Confianza',               'confianza',           'real',     'measure',   'quantitative')}
-{col('Ranking',                 'ranking',             'integer',  'dimension', 'ordinal')}
-{col('Enviado al Cliente',      'enviado_cliente',     'boolean',  'dimension', 'nominal')}
-{col('Segmento',                'nombre_segmento',     'string',   'dimension', 'nominal')}
-{col('Fecha Actualización',     'fecha_actualizacion', 'datetime', 'dimension', 'ordinal')}
+{ds_col('ID Cliente',              'cliente_id',         'string',   'dimension', 'nominal')}
+{ds_col('Razón Social',            'razon_social',        'string',   'dimension', 'nominal')}
+{ds_col('RUC',                     'ruc',                 'string',   'dimension', 'nominal')}
+{ds_col('Sub Sector',              'sub_sector',          'string',   'dimension', 'nominal')}
+{ds_col('Family ID',               'family_id',           'integer',  'dimension', 'ordinal')}
+{ds_col('Familia',                 'familia',             'string',   'dimension', 'nominal')}
+{ds_col('Equipo Actual',           'grupo_equipo',        'string',   'dimension', 'nominal')}
+{ds_col('Prod. Complementario',    'grupo_comp',          'string',   'dimension', 'nominal')}
+{ds_col('Confianza',               'confianza',           'real',     'measure',   'quantitative')}
+{ds_col('Ranking',                 'ranking',             'integer',  'dimension', 'ordinal')}
+{ds_col('Enviado al Cliente',      'enviado_cliente',     'boolean',  'dimension', 'nominal')}
+{ds_col('Segmento',                'nombre_segmento',     'string',   'dimension', 'nominal')}
+{ds_col('Fecha Actualización',     'fecha_actualizacion', 'datetime', 'dimension', 'ordinal')}
     <column caption='Number of Records' datatype='integer' hidden='true' name='[Number of Records]' role='measure' type='quantitative'>
       <calculation class='tableau' formula='1'/>
     </column>
@@ -113,8 +107,27 @@ def ds_complementarios():
 
 
 # ─── WORKSHEETS ─────────────────────────────────────────────────────────────
+# Pane structure (from schema): (view, mark, mark-sizing?, encodings?, ...)
+# view inside pane has content model (breakdown) → <view/> empty is valid.
+# filter inside view requires class + column attrs → use pass-all wildcard per dim field.
+# sort requires class + column + direction → use unspecified class.
+
+def _view_tail(filter_col, sort_col):
+    """Required elements at end of <view>: filter, sort, perspectives, aggregation."""
+    return f"""\
+      <filter class='wildcard' column='{filter_col}' required='false'>
+        <wildcard-matches>
+          <wildcard-match match='' type='match-all'/>
+        </wildcard-matches>
+      </filter>
+      <sort class='unspecified' column='{sort_col}' direction='ASC'/>
+      <perspectives/>
+      <aggregation value='true'/>"""
+
 
 def sheet_bar_segmento(name, ds):
+    inst_seg = '[none:nombre_segmento:nk]'
+    inst_cnt = '[cnt:Number of Records:qk]'
     return f"""  <worksheet name='{name}'>
     <table>
       <view>
@@ -122,26 +135,29 @@ def sheet_bar_segmento(name, ds):
           <datasource name='{ds}'/>
         </datasources>
         <datasource-dependencies datasource='{ds}'>
-{col_ref('nombre_segmento')}
-{col_ref('Number of Records')}
-{col_inst('nombre_segmento',  'None',  '[none:nombre_segmento:nk]',  'nominal')}
-{col_inst('Number of Records','Count', '[cnt:Number of Records:qk]', 'quantitative')}
+{dep_col('nombre_segmento',  'string',  'dimension', 'nominal')}
+{dep_col('Number of Records','integer', 'measure',   'quantitative')}
+{col_inst('nombre_segmento',  'None',  inst_seg, 'nominal')}
+{col_inst('Number of Records','Count', inst_cnt, 'quantitative')}
         </datasource-dependencies>
-{VIEW_REQUIRED_TAIL}
+{_view_tail(inst_seg, inst_seg)}
       </view>
       <style/>
       <panes>
-        <pane selectable='true'>
+        <pane>
+          <view/>
           <mark class='Bar'/>
         </pane>
       </panes>
-      <rows>[none:nombre_segmento:nk]</rows>
-      <cols>[cnt:Number of Records:qk]</cols>
+      <rows>{inst_seg}</rows>
+      <cols>{inst_cnt}</cols>
     </table>
   </worksheet>"""
 
 
 def sheet_bar_familia(name, ds):
+    inst_fam = '[none:familia:nk]'
+    inst_cnt = '[cnt:Number of Records:qk]'
     return f"""  <worksheet name='{name}'>
     <table>
       <view>
@@ -149,26 +165,35 @@ def sheet_bar_familia(name, ds):
           <datasource name='{ds}'/>
         </datasources>
         <datasource-dependencies datasource='{ds}'>
-{col_ref('familia')}
-{col_ref('Number of Records')}
-{col_inst('familia',          'None',  '[none:familia:nk]',          'nominal')}
-{col_inst('Number of Records','Count', '[cnt:Number of Records:qk]', 'quantitative')}
+{dep_col('familia',          'string',  'dimension', 'nominal')}
+{dep_col('Number of Records','integer', 'measure',   'quantitative')}
+{col_inst('familia',          'None',  inst_fam, 'nominal')}
+{col_inst('Number of Records','Count', inst_cnt, 'quantitative')}
         </datasource-dependencies>
-{VIEW_REQUIRED_TAIL}
+{_view_tail(inst_fam, inst_fam)}
       </view>
       <style/>
       <panes>
-        <pane selectable='true'>
+        <pane>
+          <view/>
           <mark class='Bar'/>
         </pane>
       </panes>
-      <rows>[none:familia:nk]</rows>
-      <cols>[cnt:Number of Records:qk]</cols>
+      <rows>{inst_fam}</rows>
+      <cols>{inst_cnt}</cols>
     </table>
   </worksheet>"""
 
 
 def sheet_tabla_upsell_comp(name, ds):
+    i_rs  = '[none:razon_social:nk]'
+    i_ss  = '[none:sub_sector:nk]'
+    i_fam = '[none:familia:nk]'
+    i_ge  = '[none:grupo_equipo:nk]'
+    i_gc  = '[none:grupo_comp:nk]'
+    i_con = '[avg:confianza:qk]'
+    i_env = '[none:enviado_cliente:nk]'
+    i_seg = '[none:nombre_segmento:nk]'
     return f"""  <worksheet name='{name}'>
     <table>
       <view>
@@ -176,38 +201,47 @@ def sheet_tabla_upsell_comp(name, ds):
           <datasource name='{ds}'/>
         </datasources>
         <datasource-dependencies datasource='{ds}'>
-{col_ref('razon_social')}
-{col_ref('sub_sector')}
-{col_ref('familia')}
-{col_ref('grupo_equipo')}
-{col_ref('grupo_comp')}
-{col_ref('confianza')}
-{col_ref('enviado_cliente')}
-{col_ref('nombre_segmento')}
-{col_inst('razon_social',    'None', '[none:razon_social:nk]',    'nominal')}
-{col_inst('sub_sector',      'None', '[none:sub_sector:nk]',      'nominal')}
-{col_inst('familia',         'None', '[none:familia:nk]',         'nominal')}
-{col_inst('grupo_equipo',    'None', '[none:grupo_equipo:nk]',    'nominal')}
-{col_inst('grupo_comp',      'None', '[none:grupo_comp:nk]',      'nominal')}
-{col_inst('confianza',       'Avg',  '[avg:confianza:qk]',        'quantitative')}
-{col_inst('enviado_cliente', 'None', '[none:enviado_cliente:nk]', 'nominal')}
-{col_inst('nombre_segmento', 'None', '[none:nombre_segmento:nk]', 'nominal')}
+{dep_col('razon_social',    'string',  'dimension', 'nominal')}
+{dep_col('sub_sector',      'string',  'dimension', 'nominal')}
+{dep_col('familia',         'string',  'dimension', 'nominal')}
+{dep_col('grupo_equipo',    'string',  'dimension', 'nominal')}
+{dep_col('grupo_comp',      'string',  'dimension', 'nominal')}
+{dep_col('confianza',       'real',    'measure',   'quantitative')}
+{dep_col('enviado_cliente', 'boolean', 'dimension', 'nominal')}
+{dep_col('nombre_segmento', 'string',  'dimension', 'nominal')}
+{col_inst('razon_social',    'None', i_rs,  'nominal')}
+{col_inst('sub_sector',      'None', i_ss,  'nominal')}
+{col_inst('familia',         'None', i_fam, 'nominal')}
+{col_inst('grupo_equipo',    'None', i_ge,  'nominal')}
+{col_inst('grupo_comp',      'None', i_gc,  'nominal')}
+{col_inst('confianza',       'Avg',  i_con, 'quantitative')}
+{col_inst('enviado_cliente', 'None', i_env, 'nominal')}
+{col_inst('nombre_segmento', 'None', i_seg, 'nominal')}
         </datasource-dependencies>
-{VIEW_REQUIRED_TAIL}
+{_view_tail(i_rs, i_rs)}
       </view>
       <style/>
       <panes>
-        <pane selectable='true'>
+        <pane>
+          <view/>
           <mark class='Text'/>
         </pane>
       </panes>
-      <rows>[none:razon_social:nk][none:familia:nk][none:grupo_equipo:nk]</rows>
-      <cols>[none:sub_sector:nk][none:nombre_segmento:nk][none:grupo_comp:nk][avg:confianza:qk][none:enviado_cliente:nk]</cols>
+      <rows>{i_rs}{i_fam}{i_ge}</rows>
+      <cols>{i_ss}{i_seg}{i_gc}{i_con}{i_env}</cols>
     </table>
   </worksheet>"""
 
 
 def sheet_tabla_recencia(name, ds):
+    i_rs  = '[none:razon_social:nk]'
+    i_ss  = '[none:sub_sector:nk]'
+    i_fam = '[none:familia:nk]'
+    i_rec = '[avg:recencia:qk]'
+    i_nv  = '[sum:nro_ventas:qk]'
+    i_scr = '[avg:score_recencia:qk]'
+    i_env = '[none:enviado_cliente:nk]'
+    i_seg = '[none:nombre_segmento:nk]'
     return f"""  <worksheet name='{name}'>
     <table>
       <view>
@@ -215,33 +249,34 @@ def sheet_tabla_recencia(name, ds):
           <datasource name='{ds}'/>
         </datasources>
         <datasource-dependencies datasource='{ds}'>
-{col_ref('razon_social')}
-{col_ref('sub_sector')}
-{col_ref('familia')}
-{col_ref('recencia')}
-{col_ref('nro_ventas')}
-{col_ref('score_recencia')}
-{col_ref('enviado_cliente')}
-{col_ref('nombre_segmento')}
-{col_inst('razon_social',   'None', '[none:razon_social:nk]',    'nominal')}
-{col_inst('sub_sector',     'None', '[none:sub_sector:nk]',      'nominal')}
-{col_inst('familia',        'None', '[none:familia:nk]',         'nominal')}
-{col_inst('recencia',       'Avg',  '[avg:recencia:qk]',         'quantitative')}
-{col_inst('nro_ventas',     'Sum',  '[sum:nro_ventas:qk]',       'quantitative')}
-{col_inst('score_recencia', 'Avg',  '[avg:score_recencia:qk]',   'quantitative')}
-{col_inst('enviado_cliente','None', '[none:enviado_cliente:nk]', 'nominal')}
-{col_inst('nombre_segmento','None', '[none:nombre_segmento:nk]', 'nominal')}
+{dep_col('razon_social',   'string',  'dimension', 'nominal')}
+{dep_col('sub_sector',     'string',  'dimension', 'nominal')}
+{dep_col('familia',        'string',  'dimension', 'nominal')}
+{dep_col('recencia',       'integer', 'measure',   'quantitative')}
+{dep_col('nro_ventas',     'integer', 'measure',   'quantitative')}
+{dep_col('score_recencia', 'real',    'measure',   'quantitative')}
+{dep_col('enviado_cliente','boolean', 'dimension', 'nominal')}
+{dep_col('nombre_segmento','string',  'dimension', 'nominal')}
+{col_inst('razon_social',   'None', i_rs,  'nominal')}
+{col_inst('sub_sector',     'None', i_ss,  'nominal')}
+{col_inst('familia',        'None', i_fam, 'nominal')}
+{col_inst('recencia',       'Avg',  i_rec, 'quantitative')}
+{col_inst('nro_ventas',     'Sum',  i_nv,  'quantitative')}
+{col_inst('score_recencia', 'Avg',  i_scr, 'quantitative')}
+{col_inst('enviado_cliente','None', i_env, 'nominal')}
+{col_inst('nombre_segmento','None', i_seg, 'nominal')}
         </datasource-dependencies>
-{VIEW_REQUIRED_TAIL}
+{_view_tail(i_rs, i_rs)}
       </view>
       <style/>
       <panes>
-        <pane selectable='true'>
+        <pane>
+          <view/>
           <mark class='Text'/>
         </pane>
       </panes>
-      <rows>[none:razon_social:nk][none:familia:nk]</rows>
-      <cols>[none:sub_sector:nk][none:nombre_segmento:nk][avg:recencia:qk][sum:nro_ventas:qk][avg:score_recencia:qk][none:enviado_cliente:nk]</cols>
+      <rows>{i_rs}{i_fam}</rows>
+      <cols>{i_ss}{i_seg}{i_rec}{i_nv}{i_scr}{i_env}</cols>
     </table>
   </worksheet>"""
 
@@ -256,12 +291,7 @@ def _id():
 
 
 def dashboard(name, s1, s2, s3):
-    """
-    Layout: 2 bar charts side-by-side (top 40%), detail table full-width (bottom 60%).
-    Worksheet zones have no 'type' attribute — layout containers keep type.
-    """
-    i1, i2, i3 = _id(), _id(), _id()
-    i4, i5, i6 = _id(), _id(), _id()
+    i1, i2, i3, i4, i5, i6 = _id(), _id(), _id(), _id(), _id(), _id()
     return f"""  <dashboard name='{name}'>
     <layout-options/>
     <zones>
