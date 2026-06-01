@@ -614,7 +614,7 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
 # ============================================================
 
 def generar_recencia(df_metrics, df_ventas, df_clientes, df_segmentacion,
-                     dimension_col, cfg_rec, map_family_id_fn):
+                     dimension_col, cfg_rec, map_family_id_fn, fecha_corte):
     """
     Modelo 3 — Recencia de Insumos.
 
@@ -681,12 +681,14 @@ def generar_recencia(df_metrics, df_ventas, df_clientes, df_segmentacion,
     )
     df["family_id"]           = df[dimension_col].apply(map_family_id_fn)
     df["enviado_cliente"]     = (df["ranking"] == 1) & (df["nro_ventas"] > min_ventas)
+    df["fecha_corte"]         = pd.to_datetime(fecha_corte)   # referencia desde la que se cuentan los días
     df["fecha_actualizacion"] = pd.Timestamp.now()
-    df = df.rename(columns={"vertical": "sub_sector"})
+    df = df.rename(columns={"vertical": "sub_sector", "ultima_compra": "fecha_ultima_compra"})
 
     df = df[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
         "family_id", dimension_col,
+        "fecha_ultima_compra", "fecha_corte",
         "recencia", "frecuencia_compra", "nro_ventas",
         "score_recencia", "ranking",
         "enviado_cliente",
@@ -910,7 +912,7 @@ def main():
     print("\n[ PASO 7 ] Generando recomendaciones Recencia de Insumos...")
     df_recencia = generar_recencia(
         df_metrics, df_ventas, df_clientes, df_segmentacion,
-        dim_col, cfg["modelo_recencia"], map_family_id,
+        dim_col, cfg["modelo_recencia"], map_family_id, fecha_corte,
     )
     if not df_recencia.empty and escribir_redshift:
         cargar_tabla_rs(df=df_recencia, tabla=schemas["recencia"],      esquema=schemas["schema"], overwrite_method="drop")
