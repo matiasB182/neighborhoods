@@ -473,11 +473,17 @@ def generar_upsell(df_metrics, df_ventas, df_clientes, df_segmentacion,
     df["fecha_actualizacion"] = pd.Timestamp.now()
     df = df.rename(columns={"vertical": "sub_sector"})
 
+    df["tooltip"] = (
+        df["razon_social"] + " aún no compra " + df[dimension_col] + ". "
+        + "El " + df["score_scaled"].round(0).astype(int).astype(str)
+        + "% de los clientes con perfil similar sí la compra."
+    )
+
     df = df[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
         "family_id", dimension_col,
         "score", "score_scaled", "ranking", "ranking_filtrado",
-        "filtrado_vertical", "enviado_cliente",
+        "filtrado_vertical", "enviado_cliente", "tooltip",
         "nombre_segmento", "fecha_actualizacion",
     ]]
 
@@ -602,10 +608,19 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
     df_comp["fecha_actualizacion"] = pd.Timestamp.now()
     df_comp = df_comp.rename(columns={"vertical": "sub_sector"})
 
+    df_comp["tooltip"] = (
+        df_comp["razon_social"] + " tiene " + df_comp["grupo_equipo"] + ". "
+        + df_comp["clientes_ambos"].astype(str) + " de los "
+        + df_comp["clientes_equipo"].astype(str)
+        + " clientes con ese equipo también compran "
+        + df_comp["grupo_comp"] + " ("
+        + (df_comp["confianza"] * 100).round(0).astype(int).astype(str) + "%)."
+    )
+
     df_comp = df_comp[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
         "family_id", dimension_col, "grupo_equipo", "grupo_comp",
-        "clientes_equipo", "clientes_ambos", "confianza",
+        "clientes_equipo", "clientes_ambos", "confianza", "tooltip",
         "ranking", "enviado_cliente",
         "nombre_segmento", "fecha_actualizacion",
     ]]
