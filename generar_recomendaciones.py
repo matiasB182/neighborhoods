@@ -566,16 +566,20 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
 
             c_equipo = clientes_por_grupo.get(grupo_equipo, set())
             for grupo_comp in grupos_faltantes:
-                c_comp    = clientes_por_grupo.get(grupo_comp, set())
-                confianza = len(c_equipo & c_comp) / len(c_equipo) if c_equipo else 0.0
+                c_comp              = clientes_por_grupo.get(grupo_comp, set())
+                clientes_con_equipo = len(c_equipo)
+                clientes_con_ambos  = len(c_equipo & c_comp)
+                confianza           = clientes_con_ambos / clientes_con_equipo if clientes_con_equipo else 0.0
                 if confianza < conf_minima:
                     continue
                 all_recs.append({
-                    "cliente_id":   cliente,
-                    "grupo_equipo": grupo_equipo,
-                    "grupo_comp":   grupo_comp,
-                    dimension_col:  familia,
-                    "confianza":    round(confianza, 4),
+                    "cliente_id":        cliente,
+                    "grupo_equipo":      grupo_equipo,
+                    "grupo_comp":        grupo_comp,
+                    dimension_col:       familia,
+                    "clientes_equipo":   clientes_con_equipo,  # denominador
+                    "clientes_ambos":    clientes_con_ambos,   # numerador
+                    "confianza":         round(confianza, 4),
                 })
 
     if not all_recs:
@@ -600,7 +604,8 @@ def generar_complementarios(df_ventas, df_clientes, df_segmentacion,
 
     df_comp = df_comp[[
         "cliente_id", "razon_social", "ruc", "sub_sector",
-        "family_id", dimension_col, "grupo_equipo", "grupo_comp", "confianza",
+        "family_id", dimension_col, "grupo_equipo", "grupo_comp",
+        "clientes_equipo", "clientes_ambos", "confianza",
         "ranking", "enviado_cliente",
         "nombre_segmento", "fecha_actualizacion",
     ]]
