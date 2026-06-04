@@ -34,8 +34,9 @@ REDSHIFT_PORT     = int(os.environ.get("REDSHIFT_PORT", 5439))
 REDSHIFT_DB       = os.environ["REDSHIFT_DB"]
 REDSHIFT_USER     = os.environ["REDSHIFT_USER"]
 REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
-SCHEMA            = os.environ.get("REDSHIFT_SCHEMA", "mcd")
-EXCEL_PATH        = Path(os.environ.get("EXCEL_PATH", "./datos/DATOS.xlsx"))
+SCHEMA               = os.environ.get("REDSHIFT_SCHEMA", "simulacion")
+EXCEL_PATH           = Path(os.environ.get("EXCEL_PATH", "./datos/DATOS.xlsx"))
+EXCEL_COMPETENCIA    = Path(os.environ.get("EXCEL_COMPETENCIA", "./datos/Competencia_por_local.xlsx"))
 
 DDL_PATH = Path(__file__).parent / "create_tables.sql"
 
@@ -257,6 +258,64 @@ def parse_apertura_restaurantes(ws) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Competencia
+# ---------------------------------------------------------------------------
+def parse_competencia(path: Path) -> list:
+    """
+    Excel Competencia_por_local.xlsx, hoja 'Trading':
+      Estructura jerárquica: fila header tiene (None, numero, short_name, 'RADIO', 'TIPO')
+      Filas de competidores: (None, None, nombre_competidor, radio_str, tipo)
+      Radio viene como string '0,5 KM' o '1 KM' → convertimos a float.
+    Retorna lista de (local_numero, short_name, competidor, radio_km, tipo).
+    """
+    if not path.exists():
+        log.warning("No se encontró el archivo de competencia: %s. Se omite.", path)
+        return []
+
+    wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    ws = wb.active
+    rows = [r for r in ws.iter_rows(values_only=True) if any(x is not None for x in r)]
+    wb.close()
+
+    records = []
+    current_numero = None
+    current_short  = None
+
+    for row in rows:
+        # Fila de header de local: col B = número, col C = short_name, col D = 'RADIO'
+        if row[1] is not None and str(row[3]).strip().upper() == "RADIO":
+            current_numero = int(row[1])
+            current_short  = str(row[2]).strip()
+            continue
+
+        # Fila de competidor
+        competidor = row[2]
+        radio_raw  = row[3]
+        tipo       = row[4]
+
+        if current_numero is None or competidor is None:
+            continue
+
+        # Convertir '0,5 KM' o '1 KM' → float
+        try:
+            radio_km = float(str(radio_raw).replace(",", ".").replace(" KM", "").strip())
+        except (ValueError, AttributeError):
+            radio_km = None
+
+        if radio_km is not None:
+            records.append((
+                current_numero,
+                current_short,
+                str(competidor).strip(),
+                radio_km,
+                str(tipo).strip() if tipo else None,
+            ))
+
+    log.info("competencia: %d registros", len(records))
+    return records
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -274,6 +333,8 @@ def main():
     lanzamientos = parse_lanzamientos(wb["Códigos Lanzamientos"])
     aperturas    = parse_apertura_restaurantes(wb["Aperturas"])
     wb.close()
+
+    competencia = parse_competencia(EXCEL_COMPETENCIA)
 
     conn = get_connection()
     try:
@@ -300,6 +361,11 @@ def main():
              "tiene_mostrador", "tiene_automac", "tiene_delivery",
              "tiene_kiosco_digital", "tiene_centro_postres"],
             aperturas,
+        )
+        truncate_and_insert(
+            conn, "competencia",
+            ["local_numero", "short_name", "competidor", "radio_km", "tipo"],
+            competencia,
         )
 
     except Exception as exc:

@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS {schema}.lanzamientos (
     PRIMARY KEY (lanzamiento, codigo)
 ) DISTSTYLE ALL;
 
+-- Competencia por local: competidores, radio y tipo
+CREATE TABLE IF NOT EXISTS {schema}.competencia (
+    local_numero    INT           NOT NULL,
+    short_name      VARCHAR(10)   NOT NULL,
+    competidor      VARCHAR(200)  NOT NULL,
+    radio_km        NUMERIC(4,1)  NOT NULL,
+    tipo            VARCHAR(50),
+    PRIMARY KEY (local_numero, competidor)
+) DISTSTYLE ALL;
+
 -- Hoja "Aperturas": locales con flags de canales
 -- M=Mostrador, A=Automac, D=Delivery, X=Kiosco Digital, K=Centro de Postres
 CREATE TABLE IF NOT EXISTS {schema}.apertura_restaurantes (
