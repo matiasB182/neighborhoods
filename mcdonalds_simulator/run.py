@@ -23,6 +23,21 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _asegurar_elasticidades():
+    """Calcula elasticidades si la tabla no existe o está vacía."""
+    from core.db import query_df, TABLE_ELASTICIDADES
+    try:
+        df = query_df(f"SELECT COUNT(*) AS n FROM {TABLE_ELASTICIDADES}")
+        if int(df.iloc[0]["n"]) > 0:
+            return  # ya hay datos, no recalcular
+    except Exception:
+        pass  # tabla no existe todavía
+
+    log.info("Tabla de elasticidades vacía — calculando por primera vez (puede tardar unos segundos)...")
+    from core.elasticidades import calcular_y_guardar
+    calcular_y_guardar()
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Simulador de escenarios McDonald's")
@@ -39,6 +54,8 @@ def main():
 
     with open(scenario_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
+
+    _asegurar_elasticidades()
 
     from core.engine import correr_escenario
     df, nombre = correr_escenario(config)
