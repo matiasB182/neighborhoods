@@ -41,6 +41,10 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
 
     if df.empty:
         log.error("Sin datos de forecast para los filtros indicados.")
+        log.error("  clasificacion_2 : %s", clf2 or "(todas)")
+        log.error("  sucursal        : %s", sucursal or "(todas)")
+        log.error("  periodo         : %s → %s", periodo_desde, periodo_hasta)
+        log.error("Ejecutá: python run.py --listar para ver valores disponibles.")
         return df, nombre
 
     log.info("Forecast cargado: %d filas (%d clasificaciones, %d sucursales, %d periodos)",

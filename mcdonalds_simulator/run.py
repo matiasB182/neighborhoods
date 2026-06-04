@@ -25,6 +25,31 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _listar_forecast():
+    from core.db import query_df, TABLE_FORECAST
+    sql = f"""
+        SELECT
+            clasificacion_2_sheet           AS clasificacion_2,
+            MIN(periodo)                    AS periodo_desde,
+            MAX(periodo)                    AS periodo_hasta,
+            COUNT(DISTINCT sucursal)        AS sucursales
+        FROM {TABLE_FORECAST}
+        WHERE modelo = mejor_modelo
+        GROUP BY 1
+        ORDER BY 1
+    """
+    df = query_df(sql)
+    if df.empty:
+        print("No se encontraron datos en la tabla de forecast.")
+        return
+    print(f"\n{'─'*75}")
+    print(f"{'CLASIFICACION_2':<45} {'DESDE':>8} {'HASTA':>8} {'SUCS':>6}")
+    print(f"{'─'*75}")
+    for _, row in df.iterrows():
+        print(f"{str(row['clasificacion_2']):<45} {row['periodo_desde']:>8} {row['periodo_hasta']:>8} {int(row['sucursales']):>6}")
+    print(f"{'─'*75}\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Simulador de escenarios McDonald's")
     parser.add_argument(
@@ -39,7 +64,15 @@ def main():
         "--solo-recalcular", action="store_true",
         help="Solo recalcula elasticidades y termina (sin correr escenario)"
     )
+    parser.add_argument(
+        "--listar", action="store_true",
+        help="Lista clasificacion_2 y rangos de periodo disponibles en el forecast"
+    )
     args = parser.parse_args()
+
+    if args.listar:
+        _listar_forecast()
+        return
 
     # Recálculo de elasticidades (job mensual o manual)
     if args.recalcular_elasticidades or args.solo_recalcular:
