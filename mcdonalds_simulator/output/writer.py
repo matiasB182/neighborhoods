@@ -9,22 +9,24 @@ from core.db import get_connection, execute, TABLE_RESULTADOS
 
 log = logging.getLogger(__name__)
 
-DDL_RESULTADOS = """
-    CREATE TABLE IF NOT EXISTS {TABLE_RESULTADOS} (
-        escenario_nombre    VARCHAR(300)  NOT NULL,
-        clasificacion_2     VARCHAR(200),
-        sucursal            INT,
-        periodo             VARCHAR(7),
-        forecast_base       NUMERIC(14,2),
-        forecast_simulado   NUMERIC(14,2),
-        delta_abs           NUMERIC(14,2),
-        delta_pct           NUMERIC(8,4),
-        ingreso_base        NUMERIC(18,2),
-        ingreso_simulado    NUMERIC(18,2),
-        palancas_json       VARCHAR(2000),
-        creado_en           TIMESTAMP DEFAULT SYSDATE
-    ) DISTSTYLE ALL SORTKEY (escenario_nombre, periodo);
-"""
+def _crear_tabla_si_no_existe():
+    ddl = f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_RESULTADOS} (
+            escenario_nombre    VARCHAR(300)  NOT NULL,
+            clasificacion_2     VARCHAR(200),
+            sucursal            VARCHAR(20),
+            periodo             VARCHAR(7),
+            forecast_base       NUMERIC(14,2),
+            forecast_simulado   NUMERIC(14,2),
+            delta_abs           NUMERIC(14,2),
+            delta_pct           NUMERIC(8,4),
+            ingreso_base        NUMERIC(18,2),
+            ingreso_simulado    NUMERIC(18,2),
+            palancas_json       VARCHAR(2000),
+            creado_en           TIMESTAMP DEFAULT SYSDATE
+        ) DISTSTYLE ALL SORTKEY (escenario_nombre, periodo);
+    """
+    execute(ddl)
 
 
 def guardar(df: pd.DataFrame, escenario_nombre: str, palancas: list):
@@ -73,10 +75,6 @@ def guardar(df: pd.DataFrame, escenario_nombre: str, palancas: list):
 
     csv_path = _guardar_csv(df, escenario_nombre, col_sim)
     return csv_path
-
-
-def _crear_tabla_si_no_existe():
-    execute(DDL_RESULTADOS)
 
 
 def _guardar_csv(df: pd.DataFrame, escenario_nombre: str, col_sim: str) -> Path:
