@@ -9,7 +9,7 @@ Joins clave:
 """
 
 import pandas as pd
-from core.db import query_df, SCHEMA
+from core.db import query_df, SCHEMA, FORECAST_TABLE
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ def load_forecast(clasificacion_2: str | None, sucursal: int | None,
             sucursal,
             periodo,
             COALESCE(forecast, unidades) AS forecast
-        FROM {SCHEMA}.forecast
+        FROM {FORECAST_TABLE}
         WHERE {where}
         ORDER BY clasificacion_2, sucursal, periodo
     """

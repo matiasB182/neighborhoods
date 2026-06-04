@@ -3,11 +3,13 @@
 import os
 import pandas as pd
 import psycopg2
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SCHEMA = os.environ.get("REDSHIFT_SCHEMA", "mcd")
+SCHEMA      = os.environ.get("REDSHIFT_SCHEMA", "mcd")
+FORECAST_TABLE = os.environ.get("FORECAST_TABLE", "forecast")  # nombre completo o solo tabla
 
 _CONN_PARAMS = dict(
     host=os.environ["REDSHIFT_HOST"],
@@ -24,8 +26,13 @@ def get_connection():
 
 
 def query_df(sql: str, params=None) -> pd.DataFrame:
+    """Ejecuta una query y retorna un DataFrame. Usa cursor nativo para evitar warning de pandas."""
     with get_connection() as conn:
-        return pd.read_sql(sql, conn, params=params)
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            cols = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+    return pd.DataFrame(rows, columns=cols)
 
 
 def execute(sql: str, params=None):
