@@ -146,14 +146,18 @@ def calcular_y_guardar():
 
 
 def get_elasticidad(clasificacion_2: str) -> tuple[float, str]:
-    """Retorna (elasticidad, confianza). Default si no hay histórico."""
+    """Retorna (elasticidad, confianza). Default si la tabla no existe o no hay datos."""
     sql = f"""
         SELECT elasticidad_precio, confianza
         FROM {TABLE_ELASTICIDADES}
         WHERE clasificacion_2 = %(clf2)s
         LIMIT 1
     """
-    df = query_df(sql, {"clf2": clasificacion_2})
+    try:
+        df = query_df(sql, {"clf2": clasificacion_2})
+    except Exception:
+        # Tabla no existe aún — correr con: python run.py --solo-recalcular
+        return ELASTICIDAD_DEFAULT, "supuesto"
     if df.empty:
         return ELASTICIDAD_DEFAULT, "supuesto"
     return float(df.iloc[0]["elasticidad_precio"]), str(df.iloc[0]["confianza"])
