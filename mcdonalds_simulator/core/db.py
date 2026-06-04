@@ -38,10 +38,19 @@ def get_connection():
     return psycopg2.connect(**_CONN_PARAMS)
 
 
+import logging as _logging
+_log = _logging.getLogger(__name__)
+
 def query_df(sql: str, params=None) -> pd.DataFrame:
+    import psycopg2.extras
+    _log.debug("SQL: %s | PARAMS: %s", sql.strip()[:300], params)
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, params)
+            try:
+                cur.execute(sql, params)
+            except Exception as e:
+                _log.error("SQL FALLIDO:\n%s\nPARAMS: %s", sql, params)
+                raise
             cols = [desc[0] for desc in cur.description]
             rows = cur.fetchall()
     return pd.DataFrame(rows, columns=cols)

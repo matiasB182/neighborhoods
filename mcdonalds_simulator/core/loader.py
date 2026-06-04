@@ -23,7 +23,8 @@ from core.db import (
 
 def load_forecast(clasificacion_2: str | None, sucursal: str | None,
                   periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
-    conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s", "modelo = mejor_modelo"]
+    conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s",
+                  "CAST(modelo AS VARCHAR) = CAST(mejor_modelo AS VARCHAR)"]
     params = {"desde": periodo_desde, "hasta": periodo_hasta}
 
     if clasificacion_2:
