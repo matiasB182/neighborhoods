@@ -23,14 +23,15 @@ from core.db import (
 
 def resolver_clasificacion_2(texto: str) -> list[str]:
     """
-    Busca clasificacion_2 que contengan alguna de las palabras del texto.
-    Retorna lista de matches encontrados.
+    Busca clasificacion_2 que contengan TODAS las palabras del texto (AND).
+    Filtra palabras genéricas de menos de 3 caracteres.
     """
     palabras = [p for p in texto.strip().split() if len(p) > 2]
     if not palabras:
         return []
 
-    conditions = " OR ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
+    # AND: todas las palabras deben estar presentes
+    conditions = " AND ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
                                for i in range(len(palabras))])
     params = {f"p{i}": f"%{p}%" for i, p in enumerate(palabras)}
 
