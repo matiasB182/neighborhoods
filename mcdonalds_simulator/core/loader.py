@@ -21,6 +21,29 @@ from core.db import (
 # Forecast baseline
 # ─────────────────────────────────────────────────────────────────────────────
 
+def resolver_clasificacion_2(texto: str) -> list[str]:
+    """
+    Busca clasificacion_2 que contengan alguna de las palabras del texto.
+    Retorna lista de matches encontrados.
+    """
+    palabras = [p for p in texto.strip().split() if len(p) > 2]
+    if not palabras:
+        return []
+
+    conditions = " OR ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
+                               for i in range(len(palabras))])
+    params = {f"p{i}": f"%{p}%" for i, p in enumerate(palabras)}
+
+    sql = f"""
+        SELECT DISTINCT clasificacion_2_sheet AS clasificacion_2
+        FROM {TABLE_FORECAST}
+        WHERE {conditions}
+        ORDER BY 1
+    """
+    df = query_df(sql, params)
+    return df["clasificacion_2"].tolist()
+
+
 def load_forecast(clasificacion_2: str | None, sucursal: str | None,
                   periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
     conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s",
@@ -28,8 +51,8 @@ def load_forecast(clasificacion_2: str | None, sucursal: str | None,
     params = {"desde": periodo_desde, "hasta": periodo_hasta}
 
     if clasificacion_2:
-        conditions.append("clasificacion_2_sheet = %(clf2)s")
-        params["clf2"] = clasificacion_2
+        conditions.append("LOWER(clasificacion_2_sheet) LIKE LOWER(%(clf2)s)")
+        params["clf2"] = f"%{clasificacion_2}%"
     if sucursal is not None:
         conditions.append("CAST(sucursal AS VARCHAR) = %(suc)s")
         params["suc"] = str(sucursal)
@@ -37,7 +60,7 @@ def load_forecast(clasificacion_2: str | None, sucursal: str | None,
     where = " AND ".join(conditions)
     sql = f"""
         SELECT
-            clasificacion_2_sheet   AS clasificacion_2,
+            clasificacion_2_sheet     AS clasificacion_2,
             CAST(sucursal AS VARCHAR) AS sucursal,
             periodo,
             COALESCE(forecast, unidades) AS forecast
