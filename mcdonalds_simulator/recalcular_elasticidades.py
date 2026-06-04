@@ -28,23 +28,22 @@ def main():
 
     from core.db import query_df, TABLE_ELASTICIDADES
     df = query_df(f"""
-        SELECT clasificacion_2, anio, elasticidad_precio,
+        SELECT clasificacion_2, elasticidad_precio,
                n_productos, n_cambios, precio_desde, precio_hasta, confianza
         FROM {TABLE_ELASTICIDADES}
-        ORDER BY clasificacion_2, anio
+        ORDER BY clasificacion_2
     """)
 
     if df.empty:
         log.warning("No se generaron elasticidades. Revisá que haya datos de precios y ventas.")
         sys.exit(1)
 
-    print(f"\n{'─'*105}")
-    print(f"{'CATEGORÍA':<40} {'AÑO':>5} {'ELASTICIDAD':>12} {'PRODUCTOS':>10} {'N°CAMBIOS':>10} {'PRECIO DESDE':>13} {'PRECIO HASTA':>13} {'CONFIANZA':>10}")
-    print(f"{'─'*105}")
+    print(f"\n{'─'*100}")
+    print(f"{'CATEGORÍA':<40} {'ELASTICIDAD':>12} {'PRODUCTOS':>10} {'N°CAMBIOS':>10} {'PRECIO DESDE':>13} {'PRECIO HASTA':>13} {'CONFIANZA':>10}")
+    print(f"{'─'*100}")
     for _, row in df.iterrows():
         print(
             f"{str(row['clasificacion_2']):<40} "
-            f"{int(row['anio']):>5} "
             f"{float(row['elasticidad_precio']):>12.4f} "
             f"{int(row['n_productos']):>10} "
             f"{int(row['n_cambios']):>10} "
@@ -52,8 +51,8 @@ def main():
             f"{float(row['precio_hasta']):>13,.0f} "
             f"{str(row['confianza']):>10}"
         )
-    print(f"{'─'*105}")
-    print(f"Total: {len(df)} filas ({df['clasificacion_2'].nunique()} categorías × {df['anio'].nunique()} años)\n")
+    print(f"{'─'*100}")
+    print(f"Total: {len(df)} categorías\n")
 
 
 if __name__ == "__main__":

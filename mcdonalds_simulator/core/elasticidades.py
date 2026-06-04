@@ -38,7 +38,6 @@ def calcular_y_guardar():
     execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_ELASTICIDADES} (
             clasificacion_2     VARCHAR(200) NOT NULL,
-            anio                INT          NOT NULL,
             elasticidad_precio  FLOAT        NOT NULL,
             n_productos         INT          NOT NULL,
             n_cambios           INT          NOT NULL,
@@ -133,15 +132,14 @@ def calcular_y_guardar():
         )
         SELECT
             clasificacion_2,
-            anio,
             AVG(elasticidad)                AS elasticidad_precio,
             COUNT(DISTINCT codigo)          AS n_productos,
             COUNT(*)                        AS n_cambios,
             MIN(precio_anterior)            AS precio_desde,
             MAX(precio_actual)              AS precio_hasta
         FROM con_clasificacion
-        GROUP BY clasificacion_2, anio
-        ORDER BY clasificacion_2, anio
+        GROUP BY clasificacion_2
+        ORDER BY clasificacion_2
     """
     df = query_df(sql_calc)
 
@@ -157,7 +155,6 @@ def calcular_y_guardar():
         confianza = "alta" if n >= MIN_CAMBIOS_REQUERIDOS else "media"
         rows.append((
             row["clasificacion_2"],
-            int(row["anio"]),
             float(row["elasticidad_precio"]),
             int(row["n_productos"]),
             n,
@@ -173,7 +170,7 @@ def calcular_y_guardar():
             execute_values(
                 cur,
                 f"""INSERT INTO {TABLE_ELASTICIDADES}
-                    (clasificacion_2, anio, elasticidad_precio, n_productos,
+                    (clasificacion_2, elasticidad_precio, n_productos,
                      n_cambios, precio_desde, precio_hasta, confianza)
                     VALUES %s""",
                 rows,
@@ -183,37 +180,18 @@ def calcular_y_guardar():
     log.info("Elasticidades calculadas: %d filas (categoría × año).", len(rows))
 
 
-def get_elasticidad(clasificacion_2: str, anio: int | None = None) -> tuple[float, str]:
-    """
-    Retorna (elasticidad, confianza) para una categoría.
-
-    Busca en este orden:
-      1. Elasticidad del año solicitado
-      2. Promedio histórico de la categoría (todos los años)
-      3. DEFAULT si la tabla no existe o no hay datos
-    """
+def get_elasticidad(clasificacion_2: str) -> tuple[float, str]:
+    """Retorna (elasticidad, confianza). Default si la tabla no existe o no hay datos."""
     try:
-        if anio is not None:
-            df = query_df(
-                f"""SELECT elasticidad_precio, confianza
-                    FROM {TABLE_ELASTICIDADES}
-                    WHERE clasificacion_2 = %(clf2)s AND anio = %(anio)s
-                    LIMIT 1""",
-                {"clf2": clasificacion_2, "anio": anio},
-            )
-            if not df.empty:
-                return float(df.iloc[0]["elasticidad_precio"]), str(df.iloc[0]["confianza"])
-
         df = query_df(
-            f"""SELECT AVG(elasticidad_precio) AS elasticidad_precio,
-                       MAX(confianza)          AS confianza
+            f"""SELECT elasticidad_precio, confianza
                 FROM {TABLE_ELASTICIDADES}
-                WHERE clasificacion_2 = %(clf2)s""",
+                WHERE clasificacion_2 = %(clf2)s
+                LIMIT 1""",
             {"clf2": clasificacion_2},
         )
-        if not df.empty and df.iloc[0]["elasticidad_precio"] is not None:
-            return float(df.iloc[0]["elasticidad_precio"]), "promedio histórico"
-
+        if not df.empty:
+            return float(df.iloc[0]["elasticidad_precio"]), str(df.iloc[0]["confianza"])
     except Exception:
         log.debug("Tabla de elasticidades no encontrada, usando default.")
 
