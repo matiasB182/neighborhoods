@@ -60,21 +60,34 @@ def get_connection():
 def create_tables(conn):
     log.info("Creando schema '%s' y tablas si no existen...", SCHEMA)
     ddl = DDL_PATH.read_text(encoding="utf-8").replace("{schema}", SCHEMA)
+
+    # Crear schema en su propia transacción
     with conn.cursor() as cur:
         cur.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA};")
-        # Redshift no admite múltiples statements en execute(), ejecutamos uno a uno
-        for statement in _split_sql(ddl):
-            cur.execute(statement)
     conn.commit()
+
+    # Cada CREATE TABLE en su propia transacción para aislar errores
+    for statement in _split_sql(ddl):
+        try:
+            with conn.cursor() as cur:
+                cur.execute(statement)
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            log.error("Error ejecutando DDL:\n%s\n→ %s", statement[:120], exc)
+            raise
+
     log.info("Tablas creadas/verificadas.")
 
 
 def _split_sql(sql: str) -> list[str]:
-    """Separa statements por ';' ignorando bloques vacíos y comentarios."""
+    """Separa statements por ';' ignorando líneas de comentario y bloques vacíos."""
     statements = []
     for stmt in sql.split(";"):
-        clean = stmt.strip()
-        if clean and not clean.startswith("--"):
+        # Filtrar líneas de comentario pero conservar el contenido real
+        lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
+        clean = "\n".join(lines).strip()
+        if clean:
             statements.append(clean)
     return statements
 
