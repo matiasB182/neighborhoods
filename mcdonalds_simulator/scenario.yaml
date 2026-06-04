@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GENIA escribe este archivo antes de ejecutar run.py
+# Cada campo marcado con (GENIA) es el que GENIA modifica según la conversación
+# ─────────────────────────────────────────────────────────────────────────────
+
+escenario:
+  nombre: "Subida 10% Combos Big Mac Q3 2025"   # (GENIA)
+
+# Alcance del forecast que se va a simular
+filtros:
+  clasificacion_2: "Combos Big Mac"   # (GENIA) string exacto o null = todas
+  sucursal: null                       # (GENIA) api_id_integer o null = todas
+  periodo_desde: "2025-07"             # (GENIA) formato YYYY-MM
+  periodo_hasta: "2025-09"             # (GENIA) formato YYYY-MM
+
+# Lista de palancas a aplicar (se acumulan en orden)
+palancas:
+
+  # ── Subida o baja de precio ───────────────────────────────────────────────
+  - tipo: precio
+    cambio_pct: 0.10                   # (GENIA) positivo = sube, negativo = baja
+
+  # ── Activar o desactivar una campaña ─────────────────────────────────────
+  # - tipo: promocion
+  #   campania: "McDelivery Week: 30% OFF McCombo Big Mac"  # (GENIA) nombre exacto de tabla promociones
+  #   accion: agregar                  # (GENIA) agregar | quitar
+
+  # ── Lanzamiento de producto ───────────────────────────────────────────────
+  # - tipo: lanzamiento
+  #   clasificacion_2: "McFlurry"      # (GENIA) categoría afectada
+  #   nombre_referencia: "McFlurry Dulce de Leche"  # (GENIA) solo descriptivo
+  #   proxy_lanzamiento: null          # (GENIA) nombre exacto de tabla lanzamientos, null = auto
+
+  # ── Canal estructural (agregar a una sucursal) ────────────────────────────
+  # - tipo: estructural
+  #   canal: kiosco_digital            # (GENIA) mostrador|automac|delivery|kiosco_digital|centro_postres
+  #   sucursal: 10                     # (GENIA) api_id_integer específico
+
+  # ── Competidor nuevo cerca de un local ───────────────────────────────────
+  # - tipo: competencia
+  #   sucursal: 10                     # (GENIA) api_id_integer afectado
+  #   distancia_km: 0.5               # (GENIA) distancia estimada del nuevo competidor
+
+  # ── Escenario climático ───────────────────────────────────────────────────
+  # - tipo: clima
+  #   variacion_pct: -0.20            # (GENIA) -0.20 = invierno 20% más lluvioso/frío
