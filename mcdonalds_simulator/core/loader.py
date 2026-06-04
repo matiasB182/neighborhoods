@@ -21,28 +21,28 @@ from core.db import (
 # Forecast baseline
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_forecast(clasificacion_2: str | None, sucursal: int | None,
+def load_forecast(clasificacion_2: str | None, sucursal: str | None,
                   periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
-    conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s"]
+    conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s", "mejor_modelo = TRUE"]
     params = {"desde": periodo_desde, "hasta": periodo_hasta}
 
     if clasificacion_2:
-        conditions.append("clasificacion_2 = %(clf2)s")
+        conditions.append("clasificacion_2_sheet = %(clf2)s")
         params["clf2"] = clasificacion_2
     if sucursal is not None:
-        conditions.append("sucursal = %(suc)s")
-        params["suc"] = sucursal
+        conditions.append("CAST(sucursal AS VARCHAR) = %(suc)s")
+        params["suc"] = str(sucursal)
 
     where = " AND ".join(conditions)
     sql = f"""
         SELECT
-            clasificacion_2,
-            sucursal,
+            clasificacion_2_sheet   AS clasificacion_2,
+            CAST(sucursal AS VARCHAR) AS sucursal,
             periodo,
             COALESCE(forecast, unidades) AS forecast
         FROM {TABLE_FORECAST}
         WHERE {where}
-        ORDER BY clasificacion_2, sucursal, periodo
+        ORDER BY clasificacion_2_sheet, sucursal, periodo
     """
     return query_df(sql, params)
 
@@ -68,9 +68,9 @@ def load_precio_clasificacion2(clasificacion_2: str | None,
                 SUM(fv.cantidad)                                     AS unidades
             FROM {TABLE_FACT_VENTAS} fv
             JOIN {TABLE_DIM_ARTICULO} dav
-                ON fv.producto = dav.codigo
+                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
             JOIN {TABLE_PRECIO_PRODUCTOS} pp
-                ON dav.codigo_sheet = pp.codigo
+                ON CAST(dav.codigo_sheet AS VARCHAR) = CAST(pp.codigo AS VARCHAR)
                 AND pp.anio = EXTRACT(YEAR FROM fv.fecha)::INT
                 AND pp.mes  = EXTRACT(MONTH FROM fv.fecha)::INT
             WHERE fv.fecha BETWEEN %(desde)s AND %(hasta)s
@@ -103,16 +103,16 @@ def load_ventas_historicas(clasificacion_2: str | None = None) -> pd.DataFrame:
     sql = f"""
         SELECT
             dav.clasificacion_2_sheet                               AS clasificacion_2,
-            dr.api_id_integer                                       AS sucursal,
+            CAST(dr.api_id_integer AS VARCHAR)                      AS sucursal,
             TO_CHAR(fv.fecha, 'YYYY-MM')                            AS periodo,
             SUM(fv.cantidad)                                        AS unidades,
             SUM(fv.precio_final_producto * fv.cantidad)
                 / NULLIF(SUM(fv.cantidad), 0)                       AS precio_promedio
         FROM {TABLE_FACT_VENTAS} fv
         JOIN {TABLE_DIM_ARTICULO} dav
-            ON fv.producto = dav.codigo
+            ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
         JOIN {TABLE_DIM_RESTAURANTES} dr
-            ON fv.tienda = dr.api_id_integer
+            ON CAST(fv.tienda AS VARCHAR) = CAST(dr.api_id_integer AS VARCHAR)
         WHERE dav.clasificacion_2_sheet IS NOT NULL
           {clf_filter}
         GROUP BY 1, 2, 3
@@ -228,9 +228,19 @@ def load_atributos_restaurantes() -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_competencia() -> pd.DataFrame:
+    """
+    Retorna competidores por sucursal.
+    Hace join por short_name para obtener el api_id_integer de dim_restaurantes.
+    Retorna: sucursal (VARCHAR), competidor, radio_km
+    """
     sql = f"""
-        SELECT sucursal, competidor, distancia_km
-        FROM {TABLE_COMPETENCIA}
-        ORDER BY sucursal, distancia_km
+        SELECT
+            CAST(dr.api_id_integer AS VARCHAR)  AS sucursal,
+            c.competidor,
+            c.radio_km
+        FROM {TABLE_COMPETENCIA} c
+        JOIN {TABLE_DIM_RESTAURANTES} dr
+            ON UPPER(TRIM(c.short_name)) = UPPER(TRIM(dr.short_name))
+        ORDER BY sucursal, radio_km
     """
     return query_df(sql)
