@@ -39,6 +39,7 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
     log.info("Cargando forecast baseline...")
 
     # Resolver clasificacion_2 por similitud si viene texto libre
+    clf2_exactos = None  # lista de nombres exactos resueltos
     if clf2:
         from core.loader import resolver_clasificacion_2
         matches = resolver_clasificacion_2(clf2)
@@ -47,15 +48,16 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
             log.error("Ejecutá: python run.py --listar para ver valores disponibles.")
             return pd.DataFrame(), nombre
         elif len(matches) == 1:
-            clf2 = matches[0]
-            log.info("clasificacion_2 resuelta → '%s'", clf2)
+            clf2_exactos = matches
+            log.info("clasificacion_2 resuelta → '%s'", matches[0])
         else:
+            clf2_exactos = matches
             log.warning("Se encontraron %d clasificaciones que coinciden con '%s':", len(matches), clf2)
             for m in matches:
                 log.warning("  - %s", m)
             log.warning("Se simulará con TODAS. Especificá el nombre exacto en el YAML para filtrar una sola.")
 
-    df = load_forecast(clf2, sucursal, periodo_desde, periodo_hasta)
+    df = load_forecast(clf2_exactos, sucursal, periodo_desde, periodo_hasta)
 
     if df.empty:
         log.error("Sin datos de forecast para los filtros indicados.")

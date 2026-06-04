@@ -4,14 +4,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 escenario:
-  nombre: "Subida 10% Combos Big Mac Q3 2025"   # (GENIA)
+  nombre: "Subida 10% Combo Big Mac Q3 2027"   # (GENIA)
 
 # Alcance del forecast que se va a simular
 filtros:
-  clasificacion_2: "Combos Big Mac"   # (GENIA) string exacto o null = todas
+  clasificacion_2: "Combo Big Mac"    # (GENIA) texto libre, se busca por similitud
   sucursal: null                       # (GENIA) api_id_integer o null = todas
-  periodo_desde: "2025-07"             # (GENIA) formato YYYY-MM
-  periodo_hasta: "2025-09"             # (GENIA) formato YYYY-MM
+  periodo_desde: "2027-04"             # (GENIA) formato YYYY-MM
+  periodo_hasta: "2027-06"             # (GENIA) formato YYYY-MM
 
 # Lista de palancas a aplicar (se acumulan en orden)
 palancas:

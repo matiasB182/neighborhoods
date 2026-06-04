@@ -44,15 +44,21 @@ def resolver_clasificacion_2(texto: str) -> list[str]:
     return df["clasificacion_2"].tolist()
 
 
-def load_forecast(clasificacion_2: str | None, sucursal: str | None,
+def load_forecast(clasificacion_2: list | None, sucursal: str | None,
                   periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
+    """
+    clasificacion_2: lista de nombres exactos (ya resueltos por resolver_clasificacion_2)
+                     o None para traer todas.
+    """
     conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s",
                   "CAST(modelo AS VARCHAR) = CAST(mejor_modelo AS VARCHAR)"]
     params = {"desde": periodo_desde, "hasta": periodo_hasta}
 
     if clasificacion_2:
-        conditions.append("LOWER(clasificacion_2_sheet) LIKE LOWER(%(clf2)s)")
-        params["clf2"] = f"%{clasificacion_2}%"
+        placeholders = ", ".join([f"%(clf2_{i})s" for i in range(len(clasificacion_2))])
+        conditions.append(f"clasificacion_2_sheet IN ({placeholders})")
+        for i, v in enumerate(clasificacion_2):
+            params[f"clf2_{i}"] = v
     if sucursal is not None:
         conditions.append("CAST(sucursal AS VARCHAR) = %(suc)s")
         params["suc"] = str(sucursal)
