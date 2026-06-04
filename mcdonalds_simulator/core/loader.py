@@ -23,26 +23,56 @@ from core.db import (
 
 def resolver_clasificacion_2(texto: str) -> list[str]:
     """
-    Busca clasificacion_2 que contengan TODAS las palabras del texto (AND).
-    Filtra palabras genéricas de menos de 3 caracteres.
+    Busca la clasificacion_2 más parecida al texto dado.
+    Estrategia:
+      1. Intenta match con TODAS las palabras (AND) → si hay 1 resultado, perfecto.
+      2. Si hay 0, relaja a OR y se queda con el candidato que tenga más palabras
+         del texto presentes y sea el nombre más corto (más específico).
+    Siempre retorna solo 1 elemento — el mejor match.
     """
     palabras = [p for p in texto.strip().split() if len(p) > 2]
     if not palabras:
         return []
 
-    # AND: todas las palabras deben estar presentes
-    conditions = " AND ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
-                               for i in range(len(palabras))])
+    # Intento 1: AND estricto
+    conditions_and = " AND ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
+                                    for i in range(len(palabras))])
     params = {f"p{i}": f"%{p}%" for i, p in enumerate(palabras)}
 
-    sql = f"""
+    sql_and = f"""
         SELECT DISTINCT clasificacion_2_sheet AS clasificacion_2
         FROM {TABLE_FORECAST}
-        WHERE {conditions}
+        WHERE {conditions_and}
         ORDER BY 1
     """
-    df = query_df(sql, params)
-    return df["clasificacion_2"].tolist()
+    df = query_df(sql_and, params)
+
+    if len(df) == 1:
+        return df["clasificacion_2"].tolist()
+
+    # Si AND da 0 o >1 resultados, usamos OR y elegimos el mejor
+    conditions_or = " OR ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
+                                  for i in range(len(palabras))])
+    sql_or = f"""
+        SELECT DISTINCT clasificacion_2_sheet AS clasificacion_2
+        FROM {TABLE_FORECAST}
+        WHERE {conditions_or}
+        ORDER BY 1
+    """
+    df_or = query_df(sql_or, params)
+
+    if df_or.empty:
+        return []
+
+    # Scoring: contar cuántas palabras del texto están en cada candidato
+    def score(nombre: str) -> tuple:
+        nombre_lower = nombre.lower()
+        coincidencias = sum(1 for p in palabras if p.lower() in nombre_lower)
+        return (-coincidencias, len(nombre))  # más coincidencias primero, más corto primero
+
+    candidatos = df_or["clasificacion_2"].tolist()
+    mejor = sorted(candidatos, key=score)[0]
+    return [mejor]
 
 
 def load_forecast(clasificacion_2: list | None, sucursal: str | None,

@@ -43,19 +43,12 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
     if clf2:
         from core.loader import resolver_clasificacion_2
         matches = resolver_clasificacion_2(clf2)
-        if len(matches) == 0:
+        if not matches:
             log.error("No se encontró ninguna clasificacion_2 que coincida con '%s'.", clf2)
             log.error("Ejecutá: python run.py --listar para ver valores disponibles.")
             return pd.DataFrame(), nombre
-        elif len(matches) == 1:
-            clf2_exactos = matches
-            log.info("clasificacion_2 resuelta → '%s'", matches[0])
-        else:
-            clf2_exactos = matches
-            log.warning("Se encontraron %d clasificaciones que coinciden con '%s':", len(matches), clf2)
-            for m in matches:
-                log.warning("  - %s", m)
-            log.warning("Se simulará con TODAS. Especificá el nombre exacto en el YAML para filtrar una sola.")
+        clf2_exactos = matches
+        log.info("clasificacion_2 resuelta: '%s' → '%s'", clf2, matches[0])
 
     df = load_forecast(clf2_exactos, sucursal, periodo_desde, periodo_hasta)
 
