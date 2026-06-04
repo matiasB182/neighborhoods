@@ -1,50 +1,36 @@
 -- ============================================================
--- McDonald's ETL - DDL Redshift
+-- McDonald's ETL - DDL Redshift (4 tablas, una por hoja)
 -- Schema configurado via variable REDSHIFT_SCHEMA
--- Sin foreign keys (Redshift no las enforcea de todas formas)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS {schema}.ref_productos (
+-- Hoja "Precios" unpivoteada: una fila por producto x mes
+CREATE TABLE IF NOT EXISTS {schema}.precio_productos (
     codigo        BIGINT        NOT NULL,
     descripcion   VARCHAR(200)  NOT NULL,
-    PRIMARY KEY (codigo)
-) DISTSTYLE ALL;
-
-CREATE TABLE IF NOT EXISTS {schema}.fact_precios (
-    codigo        BIGINT        NOT NULL,
     anio          SMALLINT      NOT NULL,
     mes           SMALLINT      NOT NULL,
     precio        NUMERIC(12,2),
     PRIMARY KEY (codigo, anio, mes)
 ) DISTKEY (codigo) SORTKEY (anio, mes);
 
-CREATE TABLE IF NOT EXISTS {schema}.ref_campanias (
-    campania_id   INT           NOT NULL,
-    descripcion   VARCHAR(500)  NOT NULL,
-    PRIMARY KEY (campania_id)
-) DISTSTYLE ALL;
-
-CREATE TABLE IF NOT EXISTS {schema}.ref_campania_productos (
-    campania_id   INT           NOT NULL,
+-- Hoja "Códigos-Promo": campañas y sus productos
+CREATE TABLE IF NOT EXISTS {schema}.promociones (
+    campania      VARCHAR(500)  NOT NULL,
     codigo        BIGINT        NOT NULL,
     descripcion   VARCHAR(200)  NOT NULL,
-    PRIMARY KEY (campania_id, codigo)
-) DISTKEY (codigo) SORTKEY (campania_id);
-
-CREATE TABLE IF NOT EXISTS {schema}.ref_lanzamientos (
-    lanzamiento_id  INT          NOT NULL,
-    descripcion     VARCHAR(500) NOT NULL,
-    PRIMARY KEY (lanzamiento_id)
+    PRIMARY KEY (campania, codigo)
 ) DISTSTYLE ALL;
 
-CREATE TABLE IF NOT EXISTS {schema}.ref_lanzamiento_productos (
-    lanzamiento_id  INT          NOT NULL,
-    codigo          BIGINT       NOT NULL,
-    descripcion     VARCHAR(200) NOT NULL,
-    PRIMARY KEY (lanzamiento_id, codigo)
-) DISTKEY (codigo) SORTKEY (lanzamiento_id);
+-- Hoja "Códigos Lanzamientos": lanzamientos y sus productos
+CREATE TABLE IF NOT EXISTS {schema}.lanzamientos (
+    lanzamiento   VARCHAR(500)  NOT NULL,
+    codigo        BIGINT        NOT NULL,
+    descripcion   VARCHAR(200)  NOT NULL,
+    PRIMARY KEY (lanzamiento, codigo)
+) DISTSTYLE ALL;
 
-CREATE TABLE IF NOT EXISTS {schema}.ref_locales (
+-- Hoja "Aperturas": locales con flags de canales
+CREATE TABLE IF NOT EXISTS {schema}.apertura_restaurantes (
     api_id            INT         NOT NULL,
     short_name        VARCHAR(10) NOT NULL,
     fecha_apertura    DATE,
