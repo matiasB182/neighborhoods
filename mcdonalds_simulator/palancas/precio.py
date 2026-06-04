@@ -38,11 +38,12 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
     else:
         df["precio_base"] = None
 
-    # Elasticidad y unidades simuladas por clasificacion_2
+    # Elasticidad por clasificacion_2, usando el año del periodo simulado
+    anio_simulado = int(periodo_desde[:4])
     elasticidades_cache = {}
     confianza_cache = {}
     for clf2 in clf2_unicas:
-        e, c = get_elasticidad(clf2)
+        e, c = get_elasticidad(clf2, anio=anio_simulado)
         elasticidades_cache[clf2] = e
         confianza_cache[clf2] = c
 
