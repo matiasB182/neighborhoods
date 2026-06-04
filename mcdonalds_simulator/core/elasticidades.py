@@ -11,7 +11,7 @@ Lógica:
 
 import logging
 import pandas as pd
-from core.db import query_df, execute, SCHEMA
+from core.db import query_df, execute, SCHEMA, STG_SCHEMA
 
 log = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ def calcular_y_guardar(schema_destino: str = SCHEMA):
                 dav.clasificacion_2_sheet                           AS clasificacion_2,
                 TO_CHAR(fv.fecha, 'YYYY-MM')                        AS periodo,
                 SUM(fv.cantidad)                                     AS unidades
-            FROM stg.fact_ventas fv
-            JOIN stg.dim_articulo_venta dav ON fv.producto = dav.codigo
+            FROM {STG_SCHEMA}.fact_ventas fv
+            JOIN {STG_SCHEMA}.dim_articulo_venta dav ON fv.producto = dav.codigo
             WHERE dav.clasificacion_2_sheet IS NOT NULL
             GROUP BY 1, 2
         ),

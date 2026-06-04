@@ -8,8 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SCHEMA      = os.environ.get("REDSHIFT_SCHEMA", "mcd")
-FORECAST_TABLE = os.environ.get("FORECAST_TABLE", "forecast")  # nombre completo o solo tabla
+SCHEMA         = os.environ.get("REDSHIFT_SCHEMA", "mcd")   # tablas propias (whatif_, precio_productos, etc.)
+STG_SCHEMA     = os.environ.get("STG_SCHEMA", "stg")          # tablas fuente (fact_ventas, dim_*)
+FORECAST_TABLE = os.environ.get("FORECAST_TABLE", "stg.forecast")  # tabla forecast completa (schema.tabla)
 
 _CONN_PARAMS = dict(
     host=os.environ["REDSHIFT_HOST"],
