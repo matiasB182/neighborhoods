@@ -2,17 +2,18 @@
 Calcula y cachea elasticidades precio-demanda por clasificacion_2 y año.
 
 Lógica:
-  Para cada clasificacion_2 + año, buscamos los meses donde hubo un cambio
-  de precio y medimos el cambio proporcional en unidades vendidas.
-  La elasticidad es el promedio de esos ratios dentro del año.
+  1. Para cada producto individual (codigo), calculamos la elasticidad:
+     cuando subió/bajó el precio de ESE producto, ¿cuánto cambiaron
+     las unidades de ESE producto en ese mismo mes?
+  2. Promediamos las elasticidades de todos los productos que pertenecen
+     a la misma clasificacion_2 y año.
 
-  Al simular, se busca la elasticidad del año más reciente disponible.
-  Si no hay datos suficientes para ese año, se usa el promedio histórico
-  de la categoría. Si tampoco existe, se usa el DEFAULT.
+  Al simular, se busca la elasticidad del año del periodo simulado.
+  Si no hay datos para ese año, se usa el promedio histórico de la categoría.
+  Si tampoco existe, se usa el DEFAULT.
 """
 
 import logging
-import pandas as pd
 from core.db import (
     query_df, execute,
     TABLE_PRECIO_PRODUCTOS, TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO,
@@ -22,106 +23,123 @@ from core.db import (
 log = logging.getLogger(__name__)
 
 ELASTICIDAD_DEFAULT    = -0.5
-MIN_CAMBIOS_REQUERIDOS = 2  # mínimo por año (menos datos que antes al segmentar)
+MIN_CAMBIOS_REQUERIDOS = 2
 
 
 def calcular_y_guardar():
     """
     Calcula elasticidades por clasificacion_2 + año y las guarda en TABLE_ELASTICIDADES.
-    Pensado para correr una vez al año o cuando lleguen datos nuevos.
+    Correr una vez al año o cuando lleguen datos nuevos.
     """
-    log.info("Calculando elasticidades históricas por categoría + año...")
+    log.info("Calculando elasticidades históricas por producto → categoría + año...")
 
-    sql_crear = f"""
+    # Recrear tabla para aplicar nuevas columnas si ya existía con estructura vieja
+    execute(f"DROP TABLE IF EXISTS {TABLE_ELASTICIDADES};")
+    execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_ELASTICIDADES} (
             clasificacion_2     VARCHAR(200) NOT NULL,
             anio                INT          NOT NULL,
             elasticidad_precio  FLOAT        NOT NULL,
+            n_productos         INT          NOT NULL,
             n_cambios           INT          NOT NULL,
+            precio_desde        FLOAT        NOT NULL,
+            precio_hasta        FLOAT        NOT NULL,
             confianza           VARCHAR(10)  NOT NULL,
             fecha_calculo       TIMESTAMP    DEFAULT SYSDATE
         ) DISTSTYLE ALL;
-    """
-    execute(sql_crear)
+    """)
 
+    # Calcula elasticidad a nivel producto individual, luego agrega por clasificacion_2 + año
     sql_calc = f"""
-        WITH precios_con_cambio AS (
+        WITH precios_con_lag AS (
             SELECT
-                dav.clasificacion_2_sheet                           AS clasificacion_2,
+                CAST(pp.codigo AS VARCHAR)                          AS codigo,
                 pp.anio,
                 pp.mes,
                 pp.precio                                           AS precio_actual,
                 LAG(pp.precio) OVER (
-                    PARTITION BY dav.clasificacion_2_sheet, pp.codigo
+                    PARTITION BY pp.codigo
                     ORDER BY pp.anio, pp.mes
                 )                                                   AS precio_anterior
             FROM {TABLE_PRECIO_PRODUCTOS} pp
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(pp.codigo AS VARCHAR) = CAST(dav.codigo_sheet AS VARCHAR)
             WHERE pp.precio IS NOT NULL
-              AND dav.clasificacion_2_sheet IS NOT NULL
         ),
         cambios_precio AS (
             SELECT
-                clasificacion_2,
+                codigo,
                 anio,
                 TO_CHAR(TO_DATE(anio::VARCHAR || '-' || LPAD(mes::VARCHAR,2,'0'), 'YYYY-MM'), 'YYYY-MM') AS periodo,
+                precio_actual,
+                precio_anterior,
                 (precio_actual - precio_anterior) / NULLIF(precio_anterior, 0) AS cambio_pct_precio
-            FROM precios_con_cambio
+            FROM precios_con_lag
             WHERE precio_anterior IS NOT NULL
               AND precio_anterior != precio_actual
         ),
-        ventas_periodo AS (
+        ventas_por_producto AS (
             SELECT
-                dav.clasificacion_2_sheet                           AS clasificacion_2,
-                EXTRACT(YEAR FROM fv.fecha)::INT                    AS anio,
-                TO_CHAR(fv.fecha, 'YYYY-MM')                        AS periodo,
-                SUM(fv.cantidad)                                     AS unidades
+                CAST(fv.producto AS VARCHAR)                        AS codigo,
+                TO_CHAR(fv.fecha, 'YYYY-MM')                       AS periodo,
+                SUM(fv.cantidad)                                    AS unidades
             FROM {TABLE_FACT_VENTAS} fv
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet IS NOT NULL
-            GROUP BY 1, 2, 3
+            GROUP BY 1, 2
         ),
         ventas_con_lag AS (
             SELECT
-                clasificacion_2,
-                anio,
+                codigo,
                 periodo,
                 unidades,
                 LAG(unidades) OVER (
-                    PARTITION BY clasificacion_2
+                    PARTITION BY codigo
                     ORDER BY periodo
                 ) AS unidades_anterior
-            FROM ventas_periodo
+            FROM ventas_por_producto
         ),
         cambios_cantidad AS (
             SELECT
-                clasificacion_2,
-                anio,
+                codigo,
                 periodo,
                 (unidades - unidades_anterior) / NULLIF(unidades_anterior, 0) AS cambio_pct_cantidad
             FROM ventas_con_lag
-            WHERE unidades_anterior IS NOT NULL AND unidades_anterior != unidades
+            WHERE unidades_anterior IS NOT NULL
+              AND unidades_anterior != unidades
         ),
-        elasticidades_brutas AS (
+        elasticidades_por_producto AS (
             SELECT
-                cp.clasificacion_2,
+                cp.codigo,
                 cp.anio,
+                cp.precio_actual,
+                cp.precio_anterior,
                 cc.cambio_pct_cantidad / NULLIF(cp.cambio_pct_precio, 0) AS elasticidad
             FROM cambios_precio cp
             JOIN cambios_cantidad cc
-                ON cp.clasificacion_2 = cc.clasificacion_2
-                AND cp.periodo        = cc.periodo
+                ON cp.codigo  = cc.codigo
+                AND cp.periodo = cc.periodo
             WHERE ABS(cp.cambio_pct_precio) > 0.001
               AND ABS(cc.cambio_pct_cantidad / NULLIF(cp.cambio_pct_precio, 0)) < 10
+        ),
+        con_clasificacion AS (
+            SELECT
+                dav.clasificacion_2_sheet   AS clasificacion_2,
+                ep.anio,
+                ep.elasticidad,
+                ep.codigo,
+                ep.precio_actual,
+                ep.precio_anterior
+            FROM elasticidades_por_producto ep
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(dav.codigo AS VARCHAR) = ep.codigo
+            WHERE dav.clasificacion_2_sheet IS NOT NULL
         )
         SELECT
             clasificacion_2,
             anio,
-            AVG(elasticidad)    AS elasticidad_precio,
-            COUNT(*)            AS n_cambios
-        FROM elasticidades_brutas
+            AVG(elasticidad)                AS elasticidad_precio,
+            COUNT(DISTINCT codigo)          AS n_productos,
+            COUNT(*)                        AS n_cambios,
+            MIN(precio_anterior)            AS precio_desde,
+            MAX(precio_actual)              AS precio_hasta
+        FROM con_clasificacion
         GROUP BY clasificacion_2, anio
         ORDER BY clasificacion_2, anio
     """
@@ -137,7 +155,16 @@ def calcular_y_guardar():
     for _, row in df.iterrows():
         n = int(row["n_cambios"])
         confianza = "alta" if n >= MIN_CAMBIOS_REQUERIDOS else "media"
-        rows.append((row["clasificacion_2"], int(row["anio"]), float(row["elasticidad_precio"]), n, confianza))
+        rows.append((
+            row["clasificacion_2"],
+            int(row["anio"]),
+            float(row["elasticidad_precio"]),
+            int(row["n_productos"]),
+            n,
+            float(row["precio_desde"]),
+            float(row["precio_hasta"]),
+            confianza,
+        ))
 
     from psycopg2.extras import execute_values
     from core.db import get_connection
@@ -146,7 +173,8 @@ def calcular_y_guardar():
             execute_values(
                 cur,
                 f"""INSERT INTO {TABLE_ELASTICIDADES}
-                    (clasificacion_2, anio, elasticidad_precio, n_cambios, confianza)
+                    (clasificacion_2, anio, elasticidad_precio, n_productos,
+                     n_cambios, precio_desde, precio_hasta, confianza)
                     VALUES %s""",
                 rows,
             )
@@ -160,7 +188,7 @@ def get_elasticidad(clasificacion_2: str, anio: int | None = None) -> tuple[floa
     Retorna (elasticidad, confianza) para una categoría.
 
     Busca en este orden:
-      1. Elasticidad del año solicitado (si se pasa anio)
+      1. Elasticidad del año solicitado
       2. Promedio histórico de la categoría (todos los años)
       3. DEFAULT si la tabla no existe o no hay datos
     """
@@ -176,7 +204,6 @@ def get_elasticidad(clasificacion_2: str, anio: int | None = None) -> tuple[floa
             if not df.empty:
                 return float(df.iloc[0]["elasticidad_precio"]), str(df.iloc[0]["confianza"])
 
-        # Fallback: promedio histórico de la categoría
         df = query_df(
             f"""SELECT AVG(elasticidad_precio) AS elasticidad_precio,
                        MAX(confianza)          AS confianza
