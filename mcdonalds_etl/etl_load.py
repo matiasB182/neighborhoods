@@ -222,9 +222,7 @@ def parse_lanzamientos(ws) -> list:
 def parse_apertura_restaurantes(ws) -> list:
     """
     Hoja 'Aperturas': col B=short_name, col C=fecha_apertura, col D=api_id,
-    cols E-I = flags M(mostrador), A(automac), D(delivery), X(app), K(kiosco).
-    Retorna lista de (api_id, short_name, fecha_apertura, mostrador, automac,
-                      delivery, app, kiosco).
+    cols E-I = flags M(Mostrador), A(Automac), D(Delivery), X(Kiosco Digital), K(Centro de Postres).
     """
     rows = list(ws.iter_rows(values_only=True))
     records = []
@@ -247,11 +245,11 @@ def parse_apertura_restaurantes(ws) -> list:
             int(api_id_raw),
             str(short_name).strip(),
             fecha,
-            bools[0],  # M - mostrador
-            bools[1],  # A - automac
-            bools[2],  # D - delivery
-            bools[3],  # X - app
-            bools[4],  # K - kiosco
+            bools[0],  # M - Mostrador
+            bools[1],  # A - Automac
+            bools[2],  # D - Delivery
+            bools[3],  # X - Kiosco Digital
+            bools[4],  # K - Centro de Postres
         ))
 
     log.info("apertura_restaurantes: %d registros", len(records))
@@ -300,7 +298,7 @@ def main():
             conn, "apertura_restaurantes",
             ["api_id", "short_name", "fecha_apertura",
              "tiene_mostrador", "tiene_automac", "tiene_delivery",
-             "tiene_app", "tiene_kiosco"],
+             "tiene_kiosco_digital", "tiene_centro_postres"],
             aperturas,
         )
 

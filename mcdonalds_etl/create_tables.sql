@@ -30,14 +30,15 @@ CREATE TABLE IF NOT EXISTS {schema}.lanzamientos (
 ) DISTSTYLE ALL;
 
 -- Hoja "Aperturas": locales con flags de canales
+-- M=Mostrador, A=Automac, D=Delivery, X=Kiosco Digital, K=Centro de Postres
 CREATE TABLE IF NOT EXISTS {schema}.apertura_restaurantes (
-    api_id            INT         NOT NULL,
-    short_name        VARCHAR(10) NOT NULL,
-    fecha_apertura    DATE,
-    tiene_mostrador   BOOLEAN     NOT NULL DEFAULT FALSE,
-    tiene_automac     BOOLEAN     NOT NULL DEFAULT FALSE,
-    tiene_delivery    BOOLEAN     NOT NULL DEFAULT FALSE,
-    tiene_app         BOOLEAN     NOT NULL DEFAULT FALSE,
-    tiene_kiosco      BOOLEAN     NOT NULL DEFAULT FALSE,
+    api_id                  INT         NOT NULL,
+    short_name              VARCHAR(10) NOT NULL,
+    fecha_apertura          DATE,
+    tiene_mostrador         BOOLEAN     NOT NULL DEFAULT FALSE,
+    tiene_automac           BOOLEAN     NOT NULL DEFAULT FALSE,
+    tiene_delivery          BOOLEAN     NOT NULL DEFAULT FALSE,
+    tiene_kiosco_digital    BOOLEAN     NOT NULL DEFAULT FALSE,
+    tiene_centro_postres    BOOLEAN     NOT NULL DEFAULT FALSE,
     PRIMARY KEY (api_id)
 ) DISTSTYLE ALL;
