@@ -91,6 +91,25 @@ def load_workbook(path: Path):
 
 
 # ---- Precios ---------------------------------------------------------------
+def _to_price(value) -> float | None:
+    """Convierte un valor de celda a float, descartando errores de Excel y ceros."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        # Celdas con errores de Excel (#DIV/0!, #N/A, #VALUE!, etc.)
+        if value.startswith("#") or value.strip() == "":
+            return None
+        try:
+            value = float(value.replace(",", "."))
+        except ValueError:
+            return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if f != 0.0 else None
+
+
 def parse_precios(ws) -> tuple[list, list]:
     """
     Hoja 'Precios':
@@ -123,7 +142,7 @@ def parse_precios(ws) -> tuple[list, list]:
 
         for idx, anio, mes in date_cols:
             precio_raw = row[idx] if idx < len(row) else None
-            precio = float(precio_raw) if precio_raw not in (None, 0, 0.0) else None
+            precio = _to_price(precio_raw)
             if precio is not None:
                 precios.append((codigo, anio, mes, precio))
 
