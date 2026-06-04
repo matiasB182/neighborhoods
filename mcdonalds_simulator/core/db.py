@@ -49,7 +49,11 @@ def query_df(sql: str, params=None) -> pd.DataFrame:
             try:
                 cur.execute(sql, params)
             except Exception as e:
-                _log.error("SQL FALLIDO:\n%s\nPARAMS: %s", sql, params)
+                # Solo loguear si NO es un error de tabla inexistente (esperado en primer run)
+                import psycopg2
+                if not isinstance(e, (psycopg2.errors.UndefinedTable,
+                                      psycopg2.errors.InvalidSchemaName)):
+                    _log.error("SQL FALLIDO:\n%s\nPARAMS: %s", sql, params)
                 raise
             cols = [desc[0] for desc in cur.description]
             rows = cur.fetchall()

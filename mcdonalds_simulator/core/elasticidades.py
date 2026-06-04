@@ -156,7 +156,8 @@ def get_elasticidad(clasificacion_2: str) -> tuple[float, str]:
     try:
         df = query_df(sql, {"clf2": clasificacion_2})
     except Exception:
-        # Tabla no existe aún — correr con: python run.py --solo-recalcular
+        # Tabla no existe aún — correr python run.py --solo-recalcular para calcularlas
+        log.debug("Tabla de elasticidades no encontrada, usando default.")
         return ELASTICIDAD_DEFAULT, "supuesto"
     if df.empty:
         return ELASTICIDAD_DEFAULT, "supuesto"
