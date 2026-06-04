@@ -4,13 +4,11 @@ Entry point del simulador de escenarios McDonald's.
 Uso:
     python run.py                          # usa scenario.yaml por defecto
     python run.py --scenario mi_escenario.yaml
-    python run.py --recalcular-elasticidades   # recalcula coeficientes del histórico
 
 GENIA ejecuta:
     python run.py --scenario scenario.yaml
 """
 
-import argparse
 import logging
 import sys
 from pathlib import Path
@@ -25,65 +23,15 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def _listar_forecast():
-    from core.db import query_df, TABLE_FORECAST
-    sql = f"""
-        SELECT
-            clasificacion_2_sheet           AS clasificacion_2,
-            MIN(periodo)                    AS periodo_desde,
-            MAX(periodo)                    AS periodo_hasta,
-            COUNT(DISTINCT sucursal)        AS sucursales
-        FROM {TABLE_FORECAST}
-        WHERE modelo = mejor_modelo
-        GROUP BY 1
-        ORDER BY 1
-    """
-    df = query_df(sql)
-    if df.empty:
-        print("No se encontraron datos en la tabla de forecast.")
-        return
-    print(f"\n{'─'*75}")
-    print(f"{'CLASIFICACION_2':<45} {'DESDE':>8} {'HASTA':>8} {'SUCS':>6}")
-    print(f"{'─'*75}")
-    for _, row in df.iterrows():
-        print(f"{str(row['clasificacion_2']):<45} {row['periodo_desde']:>8} {row['periodo_hasta']:>8} {int(row['sucursales']):>6}")
-    print(f"{'─'*75}\n")
-
-
 def main():
+    import argparse
     parser = argparse.ArgumentParser(description="Simulador de escenarios McDonald's")
     parser.add_argument(
         "--scenario", default="scenario.yaml",
         help="Path al archivo YAML con el escenario (default: scenario.yaml)"
     )
-    parser.add_argument(
-        "--recalcular-elasticidades", action="store_true",
-        help="Recalcula y persiste las elasticidades históricas antes de simular"
-    )
-    parser.add_argument(
-        "--solo-recalcular", action="store_true",
-        help="Solo recalcula elasticidades y termina (sin correr escenario)"
-    )
-    parser.add_argument(
-        "--listar", action="store_true",
-        help="Lista clasificacion_2 y rangos de periodo disponibles en el forecast"
-    )
     args = parser.parse_args()
 
-    if args.listar:
-        _listar_forecast()
-        return
-
-    # Recálculo de elasticidades (job mensual o manual)
-    if args.recalcular_elasticidades or args.solo_recalcular:
-        log.info("Recalculando elasticidades históricas...")
-        from core.elasticidades import calcular_y_guardar
-        calcular_y_guardar()
-        if args.solo_recalcular:
-            log.info("Listo.")
-            return
-
-    # Cargar YAML del escenario
     scenario_path = Path(args.scenario)
     if not scenario_path.exists():
         log.error("No se encontró el archivo de escenario: %s", scenario_path)
@@ -92,7 +40,6 @@ def main():
     with open(scenario_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # Ejecutar
     from core.engine import correr_escenario
     df, nombre = correr_escenario(config)
 
@@ -100,13 +47,11 @@ def main():
         log.error("El escenario no produjo resultados.")
         sys.exit(1)
 
-    # Resumen en consola
     from output.formatter import resumen_consola
     palancas = config.get("palancas", [])
     resumen = resumen_consola(df, nombre, palancas)
     print("\n" + resumen + "\n")
 
-    # Guardar en Redshift + CSV
     from output.writer import guardar
     csv_path = guardar(df, nombre, palancas)
     log.info("CSV disponible en: %s", csv_path)
