@@ -5,12 +5,12 @@ import logging
 from pathlib import Path
 import pandas as pd
 from psycopg2.extras import execute_values
-from core.db import get_connection, execute, SCHEMA
+from core.db import get_connection, execute, TABLE_RESULTADOS
 
 log = logging.getLogger(__name__)
 
 DDL_RESULTADOS = """
-    CREATE TABLE IF NOT EXISTS {schema}.whatif_resultados (
+    CREATE TABLE IF NOT EXISTS {TABLE_RESULTADOS} (
         escenario_nombre    VARCHAR(300)  NOT NULL,
         clasificacion_2     VARCHAR(200),
         sucursal            INT,
@@ -61,7 +61,7 @@ def guardar(df: pd.DataFrame, escenario_nombre: str, palancas: list):
         with conn.cursor() as cur:
             execute_values(
                 cur,
-                f"""INSERT INTO {SCHEMA}.whatif_resultados
+                f"""INSERT INTO {TABLE_RESULTADOS}
                     (escenario_nombre, clasificacion_2, sucursal, periodo,
                      forecast_base, forecast_simulado, delta_abs, delta_pct,
                      ingreso_base, ingreso_simulado, palancas_json)
@@ -76,7 +76,7 @@ def guardar(df: pd.DataFrame, escenario_nombre: str, palancas: list):
 
 
 def _crear_tabla_si_no_existe():
-    execute(DDL_RESULTADOS.replace("{schema}", SCHEMA))
+    execute(DDL_RESULTADOS)
 
 
 def _guardar_csv(df: pd.DataFrame, escenario_nombre: str, col_sim: str) -> Path:

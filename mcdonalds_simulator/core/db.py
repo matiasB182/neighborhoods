@@ -3,14 +3,26 @@
 import os
 import pandas as pd
 import psycopg2
-from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SCHEMA         = os.environ.get("REDSHIFT_SCHEMA", "mcd")   # tablas propias (whatif_, precio_productos, etc.)
-STG_SCHEMA     = os.environ.get("STG_SCHEMA", "stg")          # tablas fuente (fact_ventas, dim_*)
-FORECAST_TABLE = os.environ.get("FORECAST_TABLE", "stg.forecast")  # tabla forecast completa (schema.tabla)
+# ── Tablas fuente ────────────────────────────────────────────────
+TABLE_FORECAST          = os.environ["TABLE_FORECAST"]
+TABLE_FACT_VENTAS       = os.environ["TABLE_FACT_VENTAS"]
+TABLE_DIM_ARTICULO      = os.environ["TABLE_DIM_ARTICULO"]
+TABLE_DIM_RESTAURANTES  = os.environ["TABLE_DIM_RESTAURANTES"]
+
+# ── Tablas cargadas desde Excel ──────────────────────────────────
+TABLE_PRECIO_PRODUCTOS      = os.environ["TABLE_PRECIO_PRODUCTOS"]
+TABLE_PROMOCIONES           = os.environ["TABLE_PROMOCIONES"]
+TABLE_LANZAMIENTOS          = os.environ["TABLE_LANZAMIENTOS"]
+TABLE_APERTURA_RESTAURANTES = os.environ["TABLE_APERTURA_RESTAURANTES"]
+TABLE_COMPETENCIA           = os.environ["TABLE_COMPETENCIA"]
+
+# ── Tablas generadas por el simulador ───────────────────────────
+TABLE_ELASTICIDADES = os.environ["TABLE_ELASTICIDADES"]
+TABLE_RESULTADOS    = os.environ["TABLE_RESULTADOS"]
 
 _CONN_PARAMS = dict(
     host=os.environ["REDSHIFT_HOST"],
@@ -27,7 +39,6 @@ def get_connection():
 
 
 def query_df(sql: str, params=None) -> pd.DataFrame:
-    """Ejecuta una query y retorna un DataFrame. Usa cursor nativo para evitar warning de pandas."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)

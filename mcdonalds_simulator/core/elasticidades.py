@@ -11,32 +11,27 @@ Lógica:
 
 import logging
 import pandas as pd
-from core.db import query_df, execute, SCHEMA, STG_SCHEMA
+from core.db import (
+    query_df, execute,
+    TABLE_PRECIO_PRODUCTOS, TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO,
+    TABLE_ELASTICIDADES,
+)
 
 log = logging.getLogger(__name__)
 
-# Fallback cuando no hay datos históricos suficientes
-ELASTICIDAD_DEFAULT = -0.5
-
-# Mínimo de cambios de precio observados para confiar en la elasticidad calculada
+ELASTICIDAD_DEFAULT    = -0.5
 MIN_CAMBIOS_REQUERIDOS = 3
 
-CONFIANZA = {
-    "alta":     "ALTA   (≥3 cambios históricos observados)",
-    "media":    "MEDIA  (1-2 cambios históricos observados)",
-    "supuesto": "SUPUESTO (sin cambios históricos, se usa default -0.5)",
-}
 
-
-def calcular_y_guardar(schema_destino: str = SCHEMA):
+def calcular_y_guardar():
     """
     Calcula elasticidades para todas las clasificacion_2 y las guarda
-    en {schema}.whatif_elasticidades. Pensado para correr mensualmente.
+    en TABLE_ELASTICIDADES. Pensado para correr mensualmente.
     """
     log.info("Calculando elasticidades históricas...")
 
     sql_crear = f"""
-        CREATE TABLE IF NOT EXISTS {schema_destino}.whatif_elasticidades (
+        CREATE TABLE IF NOT EXISTS {TABLE_ELASTICIDADES} (
             clasificacion_2     VARCHAR(200) NOT NULL,
             elasticidad_precio  FLOAT        NOT NULL,
             n_cambios           INT          NOT NULL,
@@ -58,8 +53,8 @@ def calcular_y_guardar(schema_destino: str = SCHEMA):
                     PARTITION BY dav.clasificacion_2_sheet, pp.codigo
                     ORDER BY pp.anio, pp.mes
                 )                                                   AS precio_anterior
-            FROM {schema_destino}.precio_productos pp
-            JOIN stg.dim_articulo_venta dav
+            FROM {TABLE_PRECIO_PRODUCTOS} pp
+            JOIN {TABLE_DIM_ARTICULO} dav
                 ON pp.codigo = dav.codigo_sheet
             WHERE pp.precio IS NOT NULL
               AND dav.clasificacion_2_sheet IS NOT NULL
@@ -80,8 +75,8 @@ def calcular_y_guardar(schema_destino: str = SCHEMA):
                 dav.clasificacion_2_sheet                           AS clasificacion_2,
                 TO_CHAR(fv.fecha, 'YYYY-MM')                        AS periodo,
                 SUM(fv.cantidad)                                     AS unidades
-            FROM {STG_SCHEMA}.fact_ventas fv
-            JOIN {STG_SCHEMA}.dim_articulo_venta dav ON fv.producto = dav.codigo
+            FROM {TABLE_FACT_VENTAS} fv
+            JOIN {TABLE_DIM_ARTICULO} dav ON fv.producto = dav.codigo
             WHERE dav.clasificacion_2_sheet IS NOT NULL
             GROUP BY 1, 2
         ),
@@ -125,22 +120,16 @@ def calcular_y_guardar(schema_destino: str = SCHEMA):
     df = query_df(sql_calc)
 
     if df.empty:
-        log.warning("No se encontraron cambios de precio históricos. Usando defaults.")
+        log.warning("No se encontraron cambios de precio históricos.")
         return
 
-    # Truncar y recargar
-    execute(f"TRUNCATE TABLE {schema_destino}.whatif_elasticidades;")
+    execute(f"TRUNCATE TABLE {TABLE_ELASTICIDADES};")
 
     rows = []
     for _, row in df.iterrows():
         n = int(row["n_cambios"])
         confianza = "alta" if n >= MIN_CAMBIOS_REQUERIDOS else "media"
-        rows.append((
-            row["clasificacion_2"],
-            float(row["elasticidad_precio"]),
-            n,
-            confianza,
-        ))
+        rows.append((row["clasificacion_2"], float(row["elasticidad_precio"]), n, confianza))
 
     from psycopg2.extras import execute_values
     from core.db import get_connection
@@ -148,9 +137,7 @@ def calcular_y_guardar(schema_destino: str = SCHEMA):
         with conn.cursor() as cur:
             execute_values(
                 cur,
-                f"""INSERT INTO {schema_destino}.whatif_elasticidades
-                    (clasificacion_2, elasticidad_precio, n_cambios, confianza)
-                    VALUES %s""",
+                f"INSERT INTO {TABLE_ELASTICIDADES} (clasificacion_2, elasticidad_precio, n_cambios, confianza) VALUES %s",
                 rows,
             )
         conn.commit()
@@ -159,20 +146,14 @@ def calcular_y_guardar(schema_destino: str = SCHEMA):
 
 
 def get_elasticidad(clasificacion_2: str) -> tuple[float, str]:
-    """
-    Retorna (elasticidad, confianza) para una clasificacion_2.
-    Si no existe en la tabla, retorna el default con confianza 'supuesto'.
-    """
+    """Retorna (elasticidad, confianza). Default si no hay histórico."""
     sql = f"""
         SELECT elasticidad_precio, confianza
-        FROM {SCHEMA}.whatif_elasticidades
+        FROM {TABLE_ELASTICIDADES}
         WHERE clasificacion_2 = %(clf2)s
         LIMIT 1
     """
     df = query_df(sql, {"clf2": clasificacion_2})
-
     if df.empty:
         return ELASTICIDAD_DEFAULT, "supuesto"
-
-    row = df.iloc[0]
-    return float(row["elasticidad_precio"]), str(row["confianza"])
+    return float(df.iloc[0]["elasticidad_precio"]), str(df.iloc[0]["confianza"])

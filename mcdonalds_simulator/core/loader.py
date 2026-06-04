@@ -2,14 +2,19 @@
 Queries a Redshift. Centraliza todo acceso a datos del simulador.
 
 Joins clave:
-  fact_ventas.producto       → dim_articulo_venta.codigo
-  dim_articulo_venta         → clasificacion_2_sheet, codigo_sheet
-  fact_ventas.tienda         → dim_restaurantes (via api_id_integer)
+  fact_ventas.producto      → dim_articulo_venta.codigo
+  dim_articulo_venta        → clasificacion_2_sheet, codigo_sheet
+  fact_ventas.tienda        → dim_restaurantes.api_id_integer
   dim_restaurantes.api_id_integer → forecast.sucursal / apertura_restaurantes.api_id
 """
 
 import pandas as pd
-from core.db import query_df, SCHEMA, STG_SCHEMA, FORECAST_TABLE
+from core.db import (
+    query_df,
+    TABLE_FORECAST, TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO, TABLE_DIM_RESTAURANTES,
+    TABLE_PRECIO_PRODUCTOS, TABLE_PROMOCIONES, TABLE_LANZAMIENTOS,
+    TABLE_APERTURA_RESTAURANTES, TABLE_COMPETENCIA,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -18,10 +23,6 @@ from core.db import query_df, SCHEMA, STG_SCHEMA, FORECAST_TABLE
 
 def load_forecast(clasificacion_2: str | None, sucursal: int | None,
                   periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
-    """
-    Carga el forecast base filtrado por clasificacion_2, sucursal y rango de periodo.
-    Retorna columnas: clasificacion_2, sucursal, periodo, forecast
-    """
     conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s"]
     params = {"desde": periodo_desde, "hasta": periodo_hasta}
 
@@ -39,7 +40,7 @@ def load_forecast(clasificacion_2: str | None, sucursal: int | None,
             sucursal,
             periodo,
             COALESCE(forecast, unidades) AS forecast
-        FROM {FORECAST_TABLE}
+        FROM {TABLE_FORECAST}
         WHERE {where}
         ORDER BY clasificacion_2, sucursal, periodo
     """
@@ -52,13 +53,9 @@ def load_forecast(clasificacion_2: str | None, sucursal: int | None,
 
 def load_precio_clasificacion2(clasificacion_2: str | None,
                                 periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
-    """
-    Precio promedio ponderado por volumen para cada clasificacion_2 + periodo.
-    Usa precio_productos (del Excel) cruzado con ventas históricas para ponderar.
-    Retorna: clasificacion_2, periodo, precio_promedio_ponderado
-    """
     clf_filter = "AND dav.clasificacion_2_sheet = %(clf2)s" if clasificacion_2 else ""
-    params = {"desde": periodo_desde[:4] + "-01-01", "hasta": periodo_hasta[:4] + "-12-31"}
+    params = {"desde": periodo_desde[:4] + "-01-01", "hasta": periodo_hasta[:4] + "-12-31",
+              "periodo_desde": periodo_desde, "periodo_hasta": periodo_hasta}
     if clasificacion_2:
         params["clf2"] = clasificacion_2
 
@@ -69,10 +66,10 @@ def load_precio_clasificacion2(clasificacion_2: str | None,
                 TO_CHAR(fv.fecha, 'YYYY-MM')                        AS periodo,
                 pp.precio                                            AS precio_unitario,
                 SUM(fv.cantidad)                                     AS unidades
-            FROM {STG_SCHEMA}.fact_ventas fv
-            JOIN {STG_SCHEMA}.dim_articulo_venta dav
+            FROM {TABLE_FACT_VENTAS} fv
+            JOIN {TABLE_DIM_ARTICULO} dav
                 ON fv.producto = dav.codigo
-            JOIN {SCHEMA}.precio_productos pp
+            JOIN {TABLE_PRECIO_PRODUCTOS} pp
                 ON dav.codigo_sheet = pp.codigo
                 AND pp.anio = EXTRACT(YEAR FROM fv.fecha)::INT
                 AND pp.mes  = EXTRACT(MONTH FROM fv.fecha)::INT
@@ -90,8 +87,6 @@ def load_precio_clasificacion2(clasificacion_2: str | None,
         GROUP BY 1, 2
         ORDER BY 1, 2
     """
-    params["periodo_desde"] = periodo_desde
-    params["periodo_hasta"] = periodo_hasta
     return query_df(sql, params)
 
 
@@ -100,10 +95,6 @@ def load_precio_clasificacion2(clasificacion_2: str | None,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_ventas_historicas(clasificacion_2: str | None = None) -> pd.DataFrame:
-    """
-    Agrega fact_ventas a nivel clasificacion_2 + sucursal + periodo.
-    Retorna: clasificacion_2, sucursal (api_id_integer), periodo, unidades, precio_promedio
-    """
     clf_filter = "AND dav.clasificacion_2_sheet = %(clf2)s" if clasificacion_2 else ""
     params = {}
     if clasificacion_2:
@@ -117,10 +108,10 @@ def load_ventas_historicas(clasificacion_2: str | None = None) -> pd.DataFrame:
             SUM(fv.cantidad)                                        AS unidades,
             SUM(fv.precio_final_producto * fv.cantidad)
                 / NULLIF(SUM(fv.cantidad), 0)                       AS precio_promedio
-        FROM {STG_SCHEMA}.fact_ventas fv
-        JOIN {STG_SCHEMA}.dim_articulo_venta dav
+        FROM {TABLE_FACT_VENTAS} fv
+        JOIN {TABLE_DIM_ARTICULO} dav
             ON fv.producto = dav.codigo
-        JOIN {STG_SCHEMA}.dim_restaurantes dr
+        JOIN {TABLE_DIM_RESTAURANTES} dr
             ON fv.tienda = dr.api_id_integer
         WHERE dav.clasificacion_2_sheet IS NOT NULL
           {clf_filter}
@@ -137,17 +128,15 @@ def load_ventas_historicas(clasificacion_2: str | None = None) -> pd.DataFrame:
 def load_periodos_campania(campania: str) -> pd.DataFrame:
     sql = f"""
         WITH codigos_campania AS (
-            SELECT codigo
-            FROM {SCHEMA}.promociones
-            WHERE campania = %(campania)s
+            SELECT codigo FROM {TABLE_PROMOCIONES} WHERE campania = %(campania)s
         ),
         ventas_promo AS (
             SELECT
                 dav.clasificacion_2_sheet       AS clasificacion_2,
                 TO_CHAR(fv.fecha, 'YYYY-MM')    AS periodo,
                 SUM(fv.cantidad)                AS unidades_promo
-            FROM {STG_SCHEMA}.fact_ventas fv
-            JOIN {STG_SCHEMA}.dim_articulo_venta dav ON fv.producto = dav.codigo
+            FROM {TABLE_FACT_VENTAS} fv
+            JOIN {TABLE_DIM_ARTICULO} dav ON fv.producto = dav.codigo
             WHERE fv.producto IN (SELECT codigo FROM codigos_campania)
               AND dav.clasificacion_2_sheet IS NOT NULL
             GROUP BY 1, 2
@@ -160,13 +149,12 @@ def load_periodos_campania(campania: str) -> pd.DataFrame:
 def load_campania_clasificaciones(campania: str) -> list[str]:
     sql = f"""
         SELECT DISTINCT dav.clasificacion_2_sheet AS clasificacion_2
-        FROM {SCHEMA}.promociones p
-        JOIN {STG_SCHEMA}.dim_articulo_venta dav ON p.codigo = dav.codigo
+        FROM {TABLE_PROMOCIONES} p
+        JOIN {TABLE_DIM_ARTICULO} dav ON p.codigo = dav.codigo
         WHERE p.campania = %(campania)s
           AND dav.clasificacion_2_sheet IS NOT NULL
     """
-    df = query_df(sql, {"campania": campania})
-    return df["clasificacion_2"].tolist()
+    return query_df(sql, {"campania": campania})["clasificacion_2"].tolist()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,15 +165,15 @@ def load_lanzamientos_por_clasificacion(clasificacion_2: str) -> pd.DataFrame:
     sql = f"""
         WITH codigos_lanzamiento AS (
             SELECT l.lanzamiento, l.codigo
-            FROM {SCHEMA}.lanzamientos l
-            JOIN {STG_SCHEMA}.dim_articulo_venta dav ON l.codigo = dav.codigo
+            FROM {TABLE_LANZAMIENTOS} l
+            JOIN {TABLE_DIM_ARTICULO} dav ON l.codigo = dav.codigo
             WHERE dav.clasificacion_2_sheet = %(clf2)s
         ),
         primer_mes AS (
             SELECT
                 cl.lanzamiento,
                 MIN(TO_CHAR(fv.fecha, 'YYYY-MM')) AS periodo_lanzamiento
-            FROM {STG_SCHEMA}.fact_ventas fv
+            FROM {TABLE_FACT_VENTAS} fv
             JOIN codigos_lanzamiento cl ON fv.producto = cl.codigo
             GROUP BY cl.lanzamiento
         ),
@@ -193,8 +181,8 @@ def load_lanzamientos_por_clasificacion(clasificacion_2: str) -> pd.DataFrame:
             SELECT
                 TO_CHAR(fv.fecha, 'YYYY-MM')  AS periodo,
                 SUM(fv.cantidad)               AS unidades
-            FROM {STG_SCHEMA}.fact_ventas fv
-            JOIN {STG_SCHEMA}.dim_articulo_venta dav ON fv.producto = dav.codigo
+            FROM {TABLE_FACT_VENTAS} fv
+            JOIN {TABLE_DIM_ARTICULO} dav ON fv.producto = dav.codigo
             WHERE dav.clasificacion_2_sheet = %(clf2)s
             GROUP BY 1
         ),
@@ -227,15 +215,10 @@ def load_lanzamientos_por_clasificacion(clasificacion_2: str) -> pd.DataFrame:
 
 def load_atributos_restaurantes() -> pd.DataFrame:
     sql = f"""
-        SELECT
-            api_id,
-            short_name,
-            tiene_mostrador,
-            tiene_automac,
-            tiene_delivery,
-            tiene_kiosco_digital,
-            tiene_centro_postres
-        FROM {SCHEMA}.apertura_restaurantes
+        SELECT api_id, short_name,
+               tiene_mostrador, tiene_automac, tiene_delivery,
+               tiene_kiosco_digital, tiene_centro_postres
+        FROM {TABLE_APERTURA_RESTAURANTES}
     """
     return query_df(sql)
 
@@ -247,7 +230,7 @@ def load_atributos_restaurantes() -> pd.DataFrame:
 def load_competencia() -> pd.DataFrame:
     sql = f"""
         SELECT sucursal, competidor, distancia_km
-        FROM {SCHEMA}.competencia
+        FROM {TABLE_COMPETENCIA}
         ORDER BY sucursal, distancia_km
     """
     return query_df(sql)
