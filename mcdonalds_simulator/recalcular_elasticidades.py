@@ -77,7 +77,7 @@ def _debug_categoria(clasificacion_2: str):
                 periodo,
                 unidades,
                 unidades_anterior,
-                (unidades - unidades_anterior) / NULLIF(unidades_anterior, 0) AS cambio_pct_cantidad
+                (unidades - unidades_anterior)::FLOAT / NULLIF(unidades_anterior, 0) AS cambio_pct_cantidad
             FROM ventas_con_lag
             WHERE unidades_anterior IS NOT NULL
         ),
