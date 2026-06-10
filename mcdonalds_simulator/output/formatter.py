@@ -42,6 +42,24 @@ def resumen_consola(df: pd.DataFrame, escenario_nombre: str, palancas: list) -> 
         c = df.get("confianza_elasticidad", pd.Series(["?"])).iloc[0]
         elast_line = f"\n  Elasticidad usada: {e:.2f}  |  Confianza: {c}"
 
+    # Resultado de optimización (si aplica)
+    optim_line = ""
+    if "optimizacion_objetivo" in df.columns:
+        objetivo      = df["optimizacion_objetivo"].iloc[0]
+        cambio_optimo = float(df["optimizacion_cambio_optimo"].iloc[0])
+        rango         = df["optimizacion_rango"].iloc[0]
+        objetivos_label = {
+            "max_ingreso":  "Maximizar ingreso",
+            "max_unidades": "Maximizar unidades",
+            "breakeven":    "Punto de equilibrio (sin perder ingreso)",
+        }
+        label = objetivos_label.get(objetivo, objetivo)
+        optim_line = (
+            f"\n  Optimización:        {label}"
+            f"\n  Rango explorado:     {rango}"
+            f"\n  Cambio óptimo:       {cambio_optimo:+.1%}"
+        )
+
     # Advertencia de ingreso
     advertencia = ""
     if "ingreso_base" in df.columns and "ingreso_simulado" in df.columns:
@@ -71,7 +89,7 @@ def resumen_consola(df: pd.DataFrame, escenario_nombre: str, palancas: list) -> 
   Clasificación:       {", ".join(df["clasificacion_2"].unique()[:3])}
   Sucursales afectadas:{n_sucursales}
   Palancas aplicadas:  {palancas_str}
-
+{optim_line}
   Unidades base/mes:   {total_base / len(periodos):,.0f}
   Unidades simul./mes: {total_sim / len(periodos):,.0f}
   Delta unidades:      {delta_abs / len(periodos):+,.0f} ({delta_pct:+.1f}%)

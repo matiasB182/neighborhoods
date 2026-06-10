@@ -29,13 +29,31 @@ palancas:
   #   "¿Qué pasa si subo un 10% el Combo Big Mac?"  → cambio_pct: 0.10
   #   "¿Qué pasa si bajo un 15% el McFlurry?"       → cambio_pct: -0.15
   # ════════════════════════════════════════════════════════════════════════════
+  # Modo simular: aplica un cambio de precio fijo
   - tipo: precio
     activo: false
+    modo: simular                     # simular = cambio fijo | optimizar = busca el óptimo
     clasificacion_2: "combo big mac"  # texto libre, el sistema busca la más parecida
     sucursal: null                    # número de sucursal | null = todas
     periodo_desde: "2025-04"          # mes de inicio (YYYY-MM)
     periodo_hasta: "2025-06"          # mes de fin    (YYYY-MM)
     cambio_pct: 0.10                  # positivo = sube | negativo = baja
+
+  # Modo optimizar: encuentra el cambio de precio óptimo dentro de un rango
+  # Objetivos disponibles:
+  #   max_ingreso  → ¿a qué precio se maximiza el ingreso total?
+  #   max_unidades → ¿a qué precio se venden más unidades?
+  #   breakeven    → ¿hasta cuánto puedo subir sin perder ingreso?
+  - tipo: precio
+    activo: false
+    modo: optimizar
+    clasificacion_2: "combo big mac"
+    sucursal: null
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
+    objetivo: max_ingreso             # max_ingreso | max_unidades | breakeven
+    rango_desde: -0.30                # explorar desde -30%
+    rango_hasta: 0.30                 # hasta +30%
 
 
   # ════════════════════════════════════════════════════════════════════════════
