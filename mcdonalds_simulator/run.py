@@ -66,11 +66,12 @@ def main():
 
     from output.formatter import resumen_consola
     palancas = config.get("palancas", [])
-    resumen = resumen_consola(df, nombre, palancas)
+    palanca_activa = next((p for p in palancas if p.get("activo", False)), {})
+    resumen = resumen_consola(df, nombre, [palanca_activa])
     print("\n" + resumen + "\n")
 
     from output.writer import guardar
-    csv_path = guardar(df, nombre, palancas)
+    csv_path = guardar(df, nombre, [palanca_activa])
     log.info("CSV disponible en: %s", csv_path)
 
 

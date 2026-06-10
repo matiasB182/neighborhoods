@@ -2,192 +2,198 @@
 # SIMULADOR DE ESCENARIOS McDONALD'S
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Este archivo le dice al simulador QUÉ simular y CON QUÉ parámetros.
-#
-# Cómo usarlo:
-#   1. Completar el nombre del escenario
-#   2. Completar los filtros (qué producto, qué sucursal, qué período)
-#   3. En las palancas, cambiar "activo: false" a "activo: true" en las que aplican
-#   4. Completar los valores de las palancas activas
+# Cómo usar este archivo:
+#   1. Ponerle un nombre al escenario
+#   2. Buscar la palanca que corresponde a la simulación deseada
+#   3. Cambiar "activo: false" a "activo: true" en esa palanca
+#   4. Completar los parámetros de esa palanca (período, categoría, valores)
 #   5. Ejecutar: python run.py --scenario scenario.yaml
+#
+# IMPORTANTE: Solo una palanca puede estar activa a la vez.
 #
 # ═══════════════════════════════════════════════════════════════════════════════
 
-
-# ───────────────────────────────────────────────────────────────────────────────
-# NOMBRE DEL ESCENARIO
-# Aparece en el output y en el archivo CSV de resultados.
-# ───────────────────────────────────────────────────────────────────────────────
 escenario:
-  nombre: "Nombre descriptivo del escenario"
+  nombre: "Nombre descriptivo del escenario"  # aparece en el output y en el CSV
 
 
-# ───────────────────────────────────────────────────────────────────────────────
-# FILTROS
-# Definen sobre qué datos se va a correr la simulación.
-# ───────────────────────────────────────────────────────────────────────────────
-filtros:
-
-  # Categoría de producto a simular.
-  # No hace falta escribir el nombre exacto — el sistema lo busca por similitud.
-  # Ejemplos válidos: "combo big mac", "mcflurry", "cuarto de libra", "nuggets"
-  # Si se pone null, la simulación corre sobre TODAS las categorías.
-  clasificacion_2: null
-
-  # Sucursal específica a simular (número de api_id_integer).
-  # Si se pone null, la simulación corre sobre TODAS las sucursales.
-  sucursal: null
-
-  # Período de tiempo a simular. Formato: YYYY-MM (año-mes).
-  # Ejemplo: desde abril 2025 hasta junio 2025 → tres meses simulados.
-  periodo_desde: "2025-04"
-  periodo_hasta: "2025-06"
-
-
-# ───────────────────────────────────────────────────────────────────────────────
-# PALANCAS
-# Son las acciones de negocio que se quieren simular.
-# Cada palanca tiene un campo "activo": si es false, se ignora completamente.
-# Si hay varias palancas activas, se aplican en orden y se acumulan.
-# ───────────────────────────────────────────────────────────────────────────────
 palancas:
-
 
   # ════════════════════════════════════════════════════════════════════════════
   # PRECIO
-  # Simula qué pasa si se sube o baja el precio de la categoría filtrada.
+  # ¿Qué pasa si subo o bajo el precio de una categoría?
   # El sistema usa la elasticidad histórica para estimar cuántas unidades
   # se van a ganar o perder, y calcula el ingreso resultante.
-  # Ejemplos de uso:
+  #
+  # Ejemplos:
   #   "¿Qué pasa si subo un 10% el Combo Big Mac?"  → cambio_pct: 0.10
   #   "¿Qué pasa si bajo un 15% el McFlurry?"       → cambio_pct: -0.15
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: precio
     activo: false
-    cambio_pct: 0.10    # positivo = sube el precio | negativo = baja el precio
+    clasificacion_2: "combo big mac"  # texto libre, el sistema busca la más parecida
+    sucursal: null                    # número de sucursal | null = todas
+    periodo_desde: "2025-04"          # mes de inicio (YYYY-MM)
+    periodo_hasta: "2025-06"          # mes de fin    (YYYY-MM)
+    cambio_pct: 0.10                  # positivo = sube | negativo = baja
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # PROMOCIÓN: DESCUENTO
-  # Simula un descuento porcentual sobre una categoría.
-  # Si se especifica canal, el descuento aplica solo a las sucursales
-  # que tienen ese canal habilitado.
-  # Ejemplos de uso:
+  # ¿Qué pasa si hago un % de descuento sobre una categoría?
+  # Si se especifica canal, aplica solo a las sucursales que tienen ese canal.
+  #
+  # Ejemplos:
   #   "McDelivery Week: 30% OFF Combo Big Mac por Delivery"
   #   "Automac Days: 25% OFF Combo Cuarto de Libra"
+  #   "15% OFF Combo Big Mac"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: promocion
     activo: false
     subtipo: descuento
-    clasificacion_2: "combo big mac"    # texto libre, se resuelve por similitud
-    cambio_pct: -0.30                   # -0.30 = 30% de descuento
-    canal: null   # automac | delivery | app | restaurante | null = todas las sucursales
+    clasificacion_2: "combo big mac"  # texto libre, el sistema busca la más parecida
+    sucursal: null                    # número de sucursal | null = todas
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
+    cambio_pct: -0.30                 # -0.30 = 30% de descuento
+    canal: null                       # automac | delivery | app | restaurante | null = todas
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # PROMOCIÓN: 2x1
-  # Simula una promoción 2x1 sobre una categoría.
+  # ¿Qué pasa si hago un 2x1 en una categoría?
   # Equivale a un 50% de descuento en el precio efectivo.
-  # Ejemplos de uso:
+  #
+  # Ejemplos:
   #   "2x1 McFlurry Oreo todos los viernes por Automac"
   #   "Día de la hamburguesa: 2x1 McCombo Cuarto de Libra"
+  #   "2x1 en tus postres favoritos"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: promocion
     activo: false
     subtipo: 2x1
-    clasificacion_2: "mcflurry oreo"    # texto libre, se resuelve por similitud
-    canal: null   # automac | delivery | app | restaurante | null = todas las sucursales
+    clasificacion_2: "mcflurry oreo"  # texto libre, el sistema busca la más parecida
+    sucursal: null                    # número de sucursal | null = todas
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
+    canal: null                       # automac | delivery | app | restaurante | null = todas
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # PROMOCIÓN: PRECIO FIJO
-  # Simula una promoción donde el producto tiene un precio especial en guaraníes.
+  # ¿Qué pasa si pongo un precio especial en guaraníes a una categoría?
   # El sistema calcula automáticamente el % de descuento respecto al precio actual.
-  # Ejemplos de uso:
+  #
+  # Ejemplos:
   #   "Triple con Queso a Gs. 15.000 en restaurantes y Automac"
-  #   "Combo Cuarto de Libra a 20.000 Gs."
+  #   "Combo Cuarto de Libra a Gs. 20.000"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: promocion
     activo: false
     subtipo: precio_fijo
-    clasificacion_2: "triple con queso" # texto libre, se resuelve por similitud
-    precio: 15000                       # precio promocional en guaraníes
-    canal: null   # automac | delivery | app | restaurante | null = todas las sucursales
+    clasificacion_2: "triple con queso"  # texto libre, el sistema busca la más parecida
+    sucursal: null                       # número de sucursal | null = todas
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
+    precio: 15000                        # precio promocional en guaraníes
+    canal: null                          # automac | delivery | app | restaurante | null = todas
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # PROMOCIÓN: PRODUCTO GRATIS
-  # Simula una promoción donde se regala un producto al comprar otro.
+  # ¿Qué pasa si regalo un producto al comprar otro?
   # El sistema estima el uplift en unidades usando el histórico de promos similares.
-  # Ejemplos de uso:
-  #   "McNuggets gratis comprando un McCombo Cuarto de Libra por Automac"
-  #   "Comprando 1 McCombo Cuarto de Libra por PeYa te llevás 4 McNuggets de regalo"
+  #
+  # Ejemplos:
+  #   "McNuggets gratis comprando un McCombo Cuarto de Libra"
+  #   "Comprando 1 McCombo por PeYa te llevás 4 McNuggets de regalo"
+  #   "Día de la Papa Frita: 1 McPapas mediana gratis por la App"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: promocion
     activo: false
     subtipo: producto_gratis
     clasificacion_2: "combo cuarto de libra"  # categoría del producto principal
+    sucursal: null                            # número de sucursal | null = todas
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
     producto_gratis: "nuggets"                # nombre del regalo (solo descriptivo)
-    canal: null   # automac | delivery | app | restaurante | null = todas las sucursales
+    canal: null                               # automac | delivery | app | restaurante | null = todas
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # LANZAMIENTO
-  # Simula el efecto de lanzar un producto nuevo en una categoría.
-  # El sistema busca el patrón de adopción de lanzamientos anteriores
-  # de esa misma categoría y lo aplica mes a mes.
-  # Si se especifica un proxy, usa ese lanzamiento histórico puntual como referencia.
-  # Ejemplos de uso:
+  # ¿Qué impacto tendría lanzar un producto nuevo en una categoría?
+  # El sistema usa el patrón de adopción de lanzamientos anteriores de esa
+  # categoría (cuánto crecieron las ventas en los primeros 6 meses).
+  # Si se especifica un proxy, usa ese lanzamiento histórico como referencia.
+  #
+  # Ejemplos:
   #   "¿Qué impacto tendría lanzar un McFlurry nuevo?"
-  #   "¿Cómo afectaría agregar un nuevo combo al Cuarto de Libra?"
+  #   "¿Cómo afectaría agregar un nuevo Combo?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: lanzamiento
     activo: false
-    clasificacion_2: "mcflurry"                        # categoría donde se lanza
-    nombre_referencia: "McFlurry Brownie nuevo"        # nombre descriptivo del lanzamiento
-    proxy_lanzamiento: "McFlurry Braunitos Tatakua"    # lanzamiento histórico similar como referencia
-                                                       # null = el sistema elige automáticamente
+    clasificacion_2: "mcflurry"                      # categoría donde se lanza
+    sucursal: null                                   # número de sucursal | null = todas
+    periodo_desde: "2025-04"                         # mes del lanzamiento
+    periodo_hasta: "2025-09"                         # dejar al menos 6 meses para ver el patrón
+    nombre_referencia: "McFlurry Brownie nuevo"      # nombre descriptivo (solo para el output)
+    proxy_lanzamiento: "McFlurry Braunitos Tatakua"  # lanzamiento histórico similar como referencia
+                                                     # null = el sistema elige automáticamente
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # ESTRUCTURAL
-  # Simula el efecto de agregar un canal nuevo a una o todas las sucursales.
-  # El sistema compara las ventas históricas de sucursales que ya tienen ese canal
-  # contra las que no lo tienen, y aplica esa diferencia como estimación del impacto.
-  # Ejemplos de uso:
+  # ¿Qué impacto tendría agregar un canal a una o todas las sucursales?
+  # El sistema compara las ventas históricas de sucursales que ya tienen
+  # ese canal contra las que no, y aplica esa diferencia como estimación.
+  #
+  # Ejemplos:
   #   "¿Cuánto aumentarían las ventas si la sucursal 1234 tuviera Automac?"
   #   "¿Qué impacto tendría habilitar Delivery en todas las sucursales?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: estructural
     activo: false
-    canal: automac    # automac | delivery | app | restaurante | centro_postres
-    sucursal: null    # api_id_integer de la sucursal | null = todas las sucursales
+    clasificacion_2: null                # null = aplica sobre todas las categorías
+    sucursal: null                       # número de sucursal | null = todas
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
+    canal: automac                       # automac | delivery | app | restaurante | centro_postres
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # COMPETENCIA
-  # Simula el impacto de que un competidor abra cerca de una sucursal.
+  # ¿Qué impacto tendría que un competidor abra cerca de una sucursal?
   # Cuanto más cerca, mayor es la caída estimada en ventas.
-  # Ejemplos de uso:
-  #   "¿Qué pasaría si Burger King abre a 500 metros de la sucursal 1234?"
-  #   "¿Cuánto afectaría a las ventas un competidor a 1km de distancia?"
+  #
+  # Ejemplos:
+  #   "¿Qué pasaría si Burger King abre a 500m de la sucursal 1234?"
+  #   "¿Cuánto afectaría un competidor a 1km de distancia?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: competencia
     activo: false
-    sucursal: 1234        # api_id_integer de la sucursal afectada
-    distancia_km: 0.5     # distancia estimada del competidor en kilómetros
+    clasificacion_2: null        # null = aplica sobre todas las categorías
+    sucursal: 1234               # número de la sucursal afectada
+    periodo_desde: "2025-04"
+    periodo_hasta: "2025-06"
+    distancia_km: 0.5            # distancia estimada del competidor en kilómetros
 
 
   # ════════════════════════════════════════════════════════════════════════════
   # CLIMA
-  # Simula el impacto de un clima inusual sobre las ventas.
-  # Cada categoría tiene una sensibilidad distinta: los helados y postres
-  # bajan con frío/lluvia, mientras que el café puede subir levemente.
-  # Ejemplos de uso:
-  #   "¿Qué pasaría si junio es 20% más frío que el promedio?"
+  # ¿Qué impacto tendría un clima inusual sobre las ventas?
+  # Cada categoría reacciona distinto: helados y postres bajan con frío/lluvia,
+  # el café puede subir levemente, los combos se afectan poco.
+  #
+  # Ejemplos:
+  #   "¿Qué pasaría si junio es 20% más frío que el promedio histórico?"
   #   "¿Cómo afecta un verano más caluroso a las ventas de McFlurry?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: clima
     activo: false
-    variacion_pct: -0.20  # negativo = más frío/lluvioso que el promedio histórico
-                          # positivo = más caluroso que el promedio histórico
+    clasificacion_2: null        # null = aplica sobre todas las categorías
+    sucursal: null               # número de sucursal | null = todas
+    periodo_desde: "2025-06"
+    periodo_hasta: "2025-08"
+    variacion_pct: -0.20         # negativo = más frío/lluvioso que el promedio
+                                 # positivo = más caluroso que el promedio

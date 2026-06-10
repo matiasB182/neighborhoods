@@ -1,13 +1,13 @@
 """
 Motor principal del simulador.
 
-Orquesta las palancas en orden, pasando el resultado de cada una
-como input de la siguiente (acumulativo).
+Busca la primera palanca con activo: true en el YAML, carga el forecast
+usando los parámetros de esa palanca, y la ejecuta.
 """
 
 import logging
 import pandas as pd
-from core.loader import load_forecast
+from core.loader import load_forecast, resolver_clasificacion_2
 
 log = logging.getLogger(__name__)
 
@@ -23,41 +23,49 @@ PALANCAS_DISPONIBLES = {
 
 def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
     """
-    Ejecuta el escenario completo definido en el YAML cargado como dict.
+    Ejecuta el escenario definido en el YAML.
+    Busca la primera palanca con activo: true y la ejecuta.
     Retorna (df_resultado, escenario_nombre).
     """
-    escenario  = config.get("escenario", {})
-    nombre     = escenario.get("nombre", "Sin nombre")
-    filtros    = config.get("filtros", {})
-    palancas   = config.get("palancas", [])
+    nombre   = config.get("escenario", {}).get("nombre", "Sin nombre")
+    palancas = config.get("palancas", [])
 
-    clf2        = filtros.get("clasificacion_2")
-    sucursal    = filtros.get("sucursal")
-    periodo_desde = filtros["periodo_desde"]
-    periodo_hasta = filtros["periodo_hasta"]
+    # Buscar la palanca activa
+    palanca = next((p for p in palancas if p.get("activo", False)), None)
+    if palanca is None:
+        log.error("Ninguna palanca tiene activo: true en el YAML.")
+        return pd.DataFrame(), nombre
 
-    log.info("Cargando forecast baseline...")
+    tipo = palanca.get("tipo", "").lower()
+    if tipo not in PALANCAS_DISPONIBLES:
+        log.error("Tipo de palanca '%s' no reconocido. Opciones: %s",
+                  tipo, list(PALANCAS_DISPONIBLES.keys()))
+        return pd.DataFrame(), nombre
 
-    # Resolver clasificacion_2 por similitud si viene texto libre
-    clf2_exactos = None  # lista de nombres exactos resueltos
-    if clf2:
-        from core.loader import resolver_clasificacion_2
-        matches = resolver_clasificacion_2(clf2)
+    # Leer parámetros de la palanca activa
+    clf2_texto    = palanca.get("clasificacion_2")
+    sucursal      = palanca.get("sucursal")
+    periodo_desde = palanca["periodo_desde"]
+    periodo_hasta = palanca["periodo_hasta"]
+
+    # Resolver clasificacion_2 por similitud
+    clf2_exactos = None
+    if clf2_texto:
+        matches = resolver_clasificacion_2(clf2_texto)
         if not matches:
-            log.error("No se encontró ninguna clasificacion_2 que coincida con '%s'.", clf2)
-            log.error("Ejecutá: python run.py --listar para ver valores disponibles.")
+            log.error("No se encontró ninguna clasificacion_2 que coincida con '%s'.", clf2_texto)
             return pd.DataFrame(), nombre
         clf2_exactos = matches
-        log.info("clasificacion_2 resuelta: '%s' → '%s'", clf2, matches[0])
+        log.info("clasificacion_2 resuelta: '%s' → '%s'", clf2_texto, matches[0])
 
+    log.info("Cargando forecast baseline...")
     df = load_forecast(clf2_exactos, sucursal, periodo_desde, periodo_hasta)
 
     if df.empty:
         log.error("Sin datos de forecast para los filtros indicados.")
-        log.error("  clasificacion_2 : %s", clf2 or "(todas)")
+        log.error("  clasificacion_2 : %s", clf2_texto or "(todas)")
         log.error("  sucursal        : %s", sucursal or "(todas)")
         log.error("  periodo         : %s → %s", periodo_desde, periodo_hasta)
-        log.error("Ejecutá: python run.py --listar para ver valores disponibles.")
         return df, nombre
 
     log.info("Forecast cargado: %d filas (%d clasificaciones, %d sucursales, %d periodos)",
@@ -66,25 +74,16 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
              df["sucursal"].nunique(),
              df["periodo"].nunique())
 
-    for i, palanca in enumerate(palancas):
-        if not palanca.get("activo", True):
-            continue
-        tipo = palanca.get("tipo", "").lower()
-        if tipo not in PALANCAS_DISPONIBLES:
-            log.warning("Palanca '%s' no reconocida, se omite.", tipo)
-            continue
+    # Ejecutar la palanca
+    modulo = _importar_palanca(tipo)
+    log.info("Aplicando palanca: %s...", tipo.upper())
+    df = modulo.aplicar(
+        df,
+        params=palanca,
+        periodo_desde=periodo_desde,
+        periodo_hasta=periodo_hasta,
+    )
 
-        modulo = _importar_palanca(tipo)
-        log.info("Aplicando palanca %d/%d: %s...", i + 1, len(palancas), tipo.upper())
-
-        df = modulo.aplicar(
-            df,
-            params=palanca,
-            periodo_desde=periodo_desde,
-            periodo_hasta=periodo_hasta,
-        )
-
-    # Si ninguna palanca generó unidades_simuladas, las igualamos al forecast base
     if "unidades_simuladas" not in df.columns:
         df["unidades_simuladas"] = df["forecast"]
 
