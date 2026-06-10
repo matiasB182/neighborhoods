@@ -95,7 +95,7 @@ def _uplift_producto_gratis(clasificacion_2: str) -> tuple[float, str]:
             WHERE periodo NOT IN (SELECT periodo FROM ventas_promo)
         )
         SELECT
-            (AVG(vt.unidades) - b.base) / NULLIF(b.base, 0) AS uplift
+            (AVG(vt.unidades) - MAX(b.base)) / NULLIF(MAX(b.base), 0) AS uplift
         FROM ventas_total vt, baseline b
         WHERE vt.periodo IN (SELECT periodo FROM ventas_promo)
     """
