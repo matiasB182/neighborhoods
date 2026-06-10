@@ -191,13 +191,20 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
                 _explicar_confianza(lines, c, e)
 
         elif subtipo == "producto_gratis":
-            uplift = float(df["promo_uplift"].iloc[0]) if "promo_uplift" in df.columns else 0
-            conf   = str(df["promo_confianza"].iloc[0]) if "promo_confianza" in df.columns else "?"
+            uplift    = float(df["promo_uplift"].iloc[0]) if "promo_uplift" in df.columns else 0
+            conf      = str(df["promo_confianza"].iloc[0]) if "promo_confianza" in df.columns else "?"
+            campanias = str(df["promo_campanias"].iloc[0]) if "promo_campanias" in df.columns else ""
             lines.append(f"El uplift estimado de regalar un producto es {uplift:+.1%}.")
             if conf == "histórico":
                 lines.append(f"Este número viene de promos similares registradas en el histórico.")
             else:
-                lines.append(f"No hay histórico de esta promo: se usó un supuesto conservador de +10%.")
+                lines.append(f"No hay fechas de promoción en la tabla, así que no se puede medir")
+                lines.append(f"el impacto real. Se usó un supuesto conservador de +10%.")
+            if campanias:
+                lines.append(f"")
+                lines.append(f"Campañas históricas encontradas para esta categoría:")
+                for c in campanias.split(", "):
+                    lines.append(f"  · {c}")
 
         if canal:
             n_suc = df["sucursal"].nunique()

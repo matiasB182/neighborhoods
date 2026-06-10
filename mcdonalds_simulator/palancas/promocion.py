@@ -58,58 +58,37 @@ def _cambio_pct_para_precio_fijo(clasificacion_2: str, precio_fijo: float,
     return (precio_fijo - precio_actual) / precio_actual
 
 
-def _uplift_producto_gratis(clasificacion_2: str) -> tuple[float, str]:
-    """
-    Busca en el histórico promos de 'producto gratis' para esa clasificacion_2.
-    Si no hay, usa el default conservador.
-    """
-    from core.db import query_df, TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO, TABLE_PROMOCIONES
+def _campanias_similares(clasificacion_2: str) -> list[str]:
+    """Retorna nombres de campañas históricas que incluyen productos de esa clasificacion_2."""
+    from core.db import query_df, TABLE_DIM_ARTICULO, TABLE_PROMOCIONES
     sql = f"""
-        WITH codigos_promo AS (
-            SELECT DISTINCT p.codigo
-            FROM {TABLE_PROMOCIONES} p
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet = %(clf2)s
-        ),
-        ventas_promo AS (
-            SELECT
-                TO_CHAR(fv.fecha, 'YYYY-MM') AS periodo,
-                SUM(fv.cantidad)              AS unidades
-            FROM {TABLE_FACT_VENTAS} fv
-            WHERE CAST(fv.producto AS VARCHAR) IN (SELECT CAST(codigo AS VARCHAR) FROM codigos_promo)
-            GROUP BY 1
-        ),
-        ventas_total AS (
-            SELECT
-                TO_CHAR(fv.fecha, 'YYYY-MM') AS periodo,
-                SUM(fv.cantidad)              AS unidades
-            FROM {TABLE_FACT_VENTAS} fv
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet = %(clf2)s
-            GROUP BY 1
-        ),
-        baseline AS (
-            SELECT AVG(unidades) AS base FROM ventas_total
-            WHERE periodo NOT IN (SELECT periodo FROM ventas_promo)
-        )
-        SELECT
-            (AVG(vt.unidades) - MAX(b.base)) / NULLIF(MAX(b.base), 0) AS uplift
-        FROM ventas_total vt, baseline b
-        WHERE vt.periodo IN (SELECT periodo FROM ventas_promo)
+        SELECT DISTINCT p.campania
+        FROM {TABLE_PROMOCIONES} p
+        JOIN {TABLE_DIM_ARTICULO} dav
+            ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+        WHERE dav.clasificacion_2_sheet = %(clf2)s
+        ORDER BY 1
     """
     try:
         df = query_df(sql, {"clf2": clasificacion_2})
-        if not df.empty and df.iloc[0]["uplift"] is not None:
-            uplift = float(df.iloc[0]["uplift"])
-            if uplift > 0:
-                return uplift, "histórico"
+        return df["campania"].tolist() if not df.empty else []
     except Exception:
-        pass
-    log.warning("Sin histórico de producto gratis para '%s'. Usando default +%.0f%%.",
-                clasificacion_2, UPLIFT_PRODUCTO_GRATIS_DEFAULT * 100)
-    return UPLIFT_PRODUCTO_GRATIS_DEFAULT, "supuesto"
+        return []
+
+
+def _uplift_producto_gratis(clasificacion_2: str) -> tuple[float, str, list[str]]:
+    """
+    Busca campañas históricas para esa clasificacion_2 y las retorna como referencia.
+    Sin fechas de promo en la tabla no se puede medir el uplift real,
+    así que siempre usa el default conservador.
+    Retorna (uplift, confianza, campañas_encontradas).
+    """
+    campanias = _campanias_similares(clasificacion_2)
+    if campanias:
+        log.info("Campañas históricas encontradas para '%s': %s", clasificacion_2, campanias)
+    log.warning("Sin fechas de promo en la tabla — usando default +%.0f%%. Referencia: %s",
+                UPLIFT_PRODUCTO_GRATIS_DEFAULT * 100, campanias or "ninguna")
+    return UPLIFT_PRODUCTO_GRATIS_DEFAULT, "supuesto", campanias
 
 
 def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
@@ -191,7 +170,7 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
 
     # ── Producto gratis: uplift en unidades, precio sin cambio ─────────────
     elif subtipo == "producto_gratis":
-        uplift, confianza = _uplift_producto_gratis(clasificacion_2)
+        uplift, confianza, campanias = _uplift_producto_gratis(clasificacion_2)
 
         df.loc[mascara, "unidades_simuladas"] = df.loc[mascara, col_base] * (1 + uplift)
         df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, col_base]
@@ -200,6 +179,7 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
         df["promo_uplift"]     = uplift
         df["promo_confianza"]  = confianza
         df["promo_canal"]      = canal or "todos"
+        df["promo_campanias"]  = ", ".join(campanias) if campanias else ""
         desc = params.get("producto_gratis", "")
         log.info("Promo '%s' producto gratis (%s): uplift %.1f%% [%s]",
                  clasificacion_2, desc, uplift * 100, confianza)
