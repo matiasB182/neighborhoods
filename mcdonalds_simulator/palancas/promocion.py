@@ -102,7 +102,9 @@ def _uplift_producto_gratis(clasificacion_2: str) -> tuple[float, str]:
     try:
         df = query_df(sql, {"clf2": clasificacion_2})
         if not df.empty and df.iloc[0]["uplift"] is not None:
-            return float(df.iloc[0]["uplift"]), "histórico"
+            uplift = float(df.iloc[0]["uplift"])
+            if uplift > 0:
+                return uplift, "histórico"
     except Exception:
         pass
     log.warning("Sin histórico de producto gratis para '%s'. Usando default +%.0f%%.",
