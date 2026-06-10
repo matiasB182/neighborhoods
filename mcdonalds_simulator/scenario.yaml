@@ -2,106 +2,76 @@
 # SIMULADOR DE ESCENARIOS McDONALD'S — Archivo de configuración
 # ═══════════════════════════════════════════════════════════════════════════════
 # Uso: python run.py --scenario scenario.yaml
-#
 # GENIA completa este archivo según la pregunta del usuario y lo ejecuta.
-# Solo incluir las palancas que aplican al escenario — el resto se omite.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 escenario:
-  nombre: "Nombre descriptivo del escenario"  # texto libre, aparece en el output
+  nombre: "Nombre descriptivo del escenario"
 
-# ───────────────────────────────────────────────────────────────────────────────
-# FILTROS — definen el alcance de la simulación
-# ───────────────────────────────────────────────────────────────────────────────
 filtros:
-  # Categoría de producto a simular. Texto libre, se resuelve por similitud.
-  # Ejemplos: "combo big mac", "mcflurry", "cuarto de libra", "nuggets"
-  # null = todas las categorías
-  clasificacion_2: null
-
-  # Sucursal específica (api_id_integer). null = todas las sucursales.
-  sucursal: null
-
-  # Rango de períodos a simular (formato YYYY-MM)
-  periodo_desde: "2025-04"
+  clasificacion_2: null    # texto libre, se resuelve por similitud. null = todas
+  sucursal: null           # api_id_integer. null = todas las sucursales
+  periodo_desde: "2025-04" # formato YYYY-MM
   periodo_hasta: "2025-06"
 
-# ───────────────────────────────────────────────────────────────────────────────
-# PALANCAS — acciones de negocio a simular (se aplican en orden, acumulativas)
-# ───────────────────────────────────────────────────────────────────────────────
-palancas: []
+palancas:
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# REFERENCIA DE PALANCAS DISPONIBLES
-# Copiar el bloque que corresponda dentro de "palancas:" y completar los valores
-# ═══════════════════════════════════════════════════════════════════════════════
+  # ── PRECIO ──────────────────────────────────────────────────────────────────
+  - tipo: precio
+    activo: false
+    cambio_pct: 0.10             # positivo = sube | negativo = baja
 
-# ── PRECIO ────────────────────────────────────────────────────────────────────
-# Simula una suba o baja de precio. Usa elasticidad histórica para estimar
-# el impacto en unidades e ingresos.
-#
-#  - tipo: precio
-#    cambio_pct: 0.10      # +10% suba | -0.10 = baja del 10%
+  # ── PROMOCIÓN: descuento ────────────────────────────────────────────────────
+  - tipo: promocion
+    activo: false
+    subtipo: descuento
+    clasificacion_2: "combo big mac"
+    cambio_pct: -0.30            # -0.30 = 30% OFF
+    canal: null                  # automac | delivery | app | restaurante | null = todos
 
-# ── PROMOCIÓN ─────────────────────────────────────────────────────────────────
-# Simula distintos tipos de promociones. Siempre requiere clasificacion_2.
-# El canal es opcional: si se omite, aplica a todas las sucursales.
-#
-# Subtipo: descuento — % de descuento sobre el precio actual
-#  - tipo: promocion
-#    subtipo: descuento
-#    clasificacion_2: "combo big mac"   # texto libre, se resuelve por similitud
-#    cambio_pct: -0.30                  # -0.30 = 30% OFF
-#    canal: delivery                    # opcional: automac | delivery | app | restaurante
-#
-# Subtipo: 2x1 — equivale a 50% de descuento en precio efectivo
-#  - tipo: promocion
-#    subtipo: 2x1
-#    clasificacion_2: "mcflurry oreo"
-#    canal: app                         # opcional
-#
-# Subtipo: precio_fijo — precio absoluto en guaraníes
-#  - tipo: promocion
-#    subtipo: precio_fijo
-#    clasificacion_2: "triple con queso"
-#    precio: 15000                      # precio en Gs.
-#
-# Subtipo: producto_gratis — uplift en unidades sin cambio de precio
-#  - tipo: promocion
-#    subtipo: producto_gratis
-#    clasificacion_2: "combo cuarto de libra"
-#    producto_gratis: "nuggets"         # descriptivo, aparece en el output
-#    canal: automac                     # opcional
+  # ── PROMOCIÓN: 2x1 ──────────────────────────────────────────────────────────
+  - tipo: promocion
+    activo: false
+    subtipo: 2x1
+    clasificacion_2: "mcflurry oreo"
+    canal: null                  # automac | delivery | app | restaurante | null = todos
 
-# ── LANZAMIENTO ───────────────────────────────────────────────────────────────
-# Simula el efecto de lanzar un producto nuevo en una categoría.
-# Usa el patrón histórico de lanzamientos anteriores de esa categoría.
-#
-#  - tipo: lanzamiento
-#    clasificacion_2: "mcflurry"        # categoría donde se lanza
-#    nombre_referencia: "McFlurry Brownie nuevo"  # descriptivo
-#    proxy_lanzamiento: "McFlurry Braunitos Tatakua"  # opcional: lanzamiento histórico similar
+  # ── PROMOCIÓN: precio fijo ───────────────────────────────────────────────────
+  - tipo: promocion
+    activo: false
+    subtipo: precio_fijo
+    clasificacion_2: "triple con queso"
+    precio: 15000                # precio absoluto en Gs.
+    canal: null                  # automac | delivery | app | restaurante | null = todos
 
-# ── ESTRUCTURAL ───────────────────────────────────────────────────────────────
-# Simula agregar un canal a una o todas las sucursales.
-# Compara ventas históricas de sucursales con vs sin ese canal.
-#
-#  - tipo: estructural
-#    canal: automac                     # automac | delivery | app | restaurante | centro_postres
-#    sucursal: 1234                     # opcional: api_id_integer. null = todas
+  # ── PROMOCIÓN: producto gratis ───────────────────────────────────────────────
+  - tipo: promocion
+    activo: false
+    subtipo: producto_gratis
+    clasificacion_2: "combo cuarto de libra"
+    producto_gratis: "nuggets"   # descriptivo, aparece en el output
+    canal: null                  # automac | delivery | app | restaurante | null = todos
 
-# ── COMPETENCIA ───────────────────────────────────────────────────────────────
-# Simula la apertura de un competidor cerca de una sucursal.
-# El impacto depende de la distancia: más cerca = mayor caída de ventas.
-#
-#  - tipo: competencia
-#    sucursal: 1234                     # api_id_integer afectado
-#    distancia_km: 0.5                  # distancia del competidor en km
+  # ── LANZAMIENTO ─────────────────────────────────────────────────────────────
+  - tipo: lanzamiento
+    activo: false
+    clasificacion_2: "mcflurry"
+    nombre_referencia: "McFlurry Brownie nuevo"
+    proxy_lanzamiento: null      # nombre de lanzamiento histórico similar | null = auto
 
-# ── CLIMA ─────────────────────────────────────────────────────────────────────
-# Simula un desvío climático respecto al promedio histórico.
-# Afecta distintas categorías según su sensibilidad (helados, café, etc.)
-#
-#  - tipo: clima
-#    variacion_pct: -0.20              # -0.20 = invierno 20% más frío/lluvioso
-#                                      # +0.20 = verano 20% más caluroso
+  # ── ESTRUCTURAL ─────────────────────────────────────────────────────────────
+  - tipo: estructural
+    activo: false
+    canal: automac               # automac | delivery | app | restaurante | centro_postres
+    sucursal: null               # api_id_integer | null = todas
+
+  # ── COMPETENCIA ─────────────────────────────────────────────────────────────
+  - tipo: competencia
+    activo: false
+    sucursal: 1234               # api_id_integer afectado
+    distancia_km: 0.5            # distancia del competidor en km
+
+  # ── CLIMA ────────────────────────────────────────────────────────────────────
+  - tipo: clima
+    activo: false
+    variacion_pct: -0.20         # negativo = más frío/lluvioso | positivo = más caluroso

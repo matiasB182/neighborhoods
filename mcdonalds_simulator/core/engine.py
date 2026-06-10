@@ -67,6 +67,8 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
              df["periodo"].nunique())
 
     for i, palanca in enumerate(palancas):
+        if not palanca.get("activo", True):
+            continue
         tipo = palanca.get("tipo", "").lower()
         if tipo not in PALANCAS_DISPONIBLES:
             log.warning("Palanca '%s' no reconocida, se omite.", tipo)
