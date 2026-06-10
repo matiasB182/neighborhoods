@@ -1,46 +1,107 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# GENIA escribe este archivo antes de ejecutar run.py
-# Cada campo marcado con (GENIA) es el que GENIA modifica según la conversación
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIMULADOR DE ESCENARIOS McDONALD'S — Archivo de configuración
+# ═══════════════════════════════════════════════════════════════════════════════
+# Uso: python run.py --scenario scenario.yaml
+#
+# GENIA completa este archivo según la pregunta del usuario y lo ejecuta.
+# Solo incluir las palancas que aplican al escenario — el resto se omite.
+# ═══════════════════════════════════════════════════════════════════════════════
 
 escenario:
-  nombre: "Subida 10% Combo Big Mac Q3 2027"   # (GENIA)
+  nombre: "Nombre descriptivo del escenario"  # texto libre, aparece en el output
 
-# Alcance del forecast que se va a simular
+# ───────────────────────────────────────────────────────────────────────────────
+# FILTROS — definen el alcance de la simulación
+# ───────────────────────────────────────────────────────────────────────────────
 filtros:
-  clasificacion_2: "Combo Big Mac"    # (GENIA) texto libre, se busca por similitud
-  sucursal: null                       # (GENIA) api_id_integer o null = todas
-  periodo_desde: "2027-04"             # (GENIA) formato YYYY-MM
-  periodo_hasta: "2027-06"             # (GENIA) formato YYYY-MM
+  # Categoría de producto a simular. Texto libre, se resuelve por similitud.
+  # Ejemplos: "combo big mac", "mcflurry", "cuarto de libra", "nuggets"
+  # null = todas las categorías
+  clasificacion_2: null
 
-# Lista de palancas a aplicar (se acumulan en orden)
-palancas:
+  # Sucursal específica (api_id_integer). null = todas las sucursales.
+  sucursal: null
 
-  # ── Subida o baja de precio ───────────────────────────────────────────────
-  - tipo: precio
-    cambio_pct: 0.10                   # (GENIA) positivo = sube, negativo = baja
+  # Rango de períodos a simular (formato YYYY-MM)
+  periodo_desde: "2025-04"
+  periodo_hasta: "2025-06"
 
-  # ── Activar o desactivar una campaña ─────────────────────────────────────
-  # - tipo: promocion
-  #   campania: "McDelivery Week: 30% OFF McCombo Big Mac"  # (GENIA) nombre exacto de tabla promociones
-  #   accion: agregar                  # (GENIA) agregar | quitar
+# ───────────────────────────────────────────────────────────────────────────────
+# PALANCAS — acciones de negocio a simular (se aplican en orden, acumulativas)
+# ───────────────────────────────────────────────────────────────────────────────
+palancas: []
 
-  # ── Lanzamiento de producto ───────────────────────────────────────────────
-  # - tipo: lanzamiento
-  #   clasificacion_2: "McFlurry"      # (GENIA) categoría afectada
-  #   nombre_referencia: "McFlurry Dulce de Leche"  # (GENIA) solo descriptivo
-  #   proxy_lanzamiento: null          # (GENIA) nombre exacto de tabla lanzamientos, null = auto
+# ═══════════════════════════════════════════════════════════════════════════════
+# REFERENCIA DE PALANCAS DISPONIBLES
+# Copiar el bloque que corresponda dentro de "palancas:" y completar los valores
+# ═══════════════════════════════════════════════════════════════════════════════
 
-  # ── Canal estructural (agregar a una sucursal) ────────────────────────────
-  # - tipo: estructural
-  #   canal: kiosco_digital            # (GENIA) mostrador|automac|delivery|kiosco_digital|centro_postres
-  #   sucursal: 10                     # (GENIA) api_id_integer específico
+# ── PRECIO ────────────────────────────────────────────────────────────────────
+# Simula una suba o baja de precio. Usa elasticidad histórica para estimar
+# el impacto en unidades e ingresos.
+#
+#  - tipo: precio
+#    cambio_pct: 0.10      # +10% suba | -0.10 = baja del 10%
 
-  # ── Competidor nuevo cerca de un local ───────────────────────────────────
-  # - tipo: competencia
-  #   sucursal: 10                     # (GENIA) api_id_integer afectado
-  #   distancia_km: 0.5               # (GENIA) distancia estimada del nuevo competidor
+# ── PROMOCIÓN ─────────────────────────────────────────────────────────────────
+# Simula distintos tipos de promociones. Siempre requiere clasificacion_2.
+# El canal es opcional: si se omite, aplica a todas las sucursales.
+#
+# Subtipo: descuento — % de descuento sobre el precio actual
+#  - tipo: promocion
+#    subtipo: descuento
+#    clasificacion_2: "combo big mac"   # texto libre, se resuelve por similitud
+#    cambio_pct: -0.30                  # -0.30 = 30% OFF
+#    canal: delivery                    # opcional: automac | delivery | app | restaurante
+#
+# Subtipo: 2x1 — equivale a 50% de descuento en precio efectivo
+#  - tipo: promocion
+#    subtipo: 2x1
+#    clasificacion_2: "mcflurry oreo"
+#    canal: app                         # opcional
+#
+# Subtipo: precio_fijo — precio absoluto en guaraníes
+#  - tipo: promocion
+#    subtipo: precio_fijo
+#    clasificacion_2: "triple con queso"
+#    precio: 15000                      # precio en Gs.
+#
+# Subtipo: producto_gratis — uplift en unidades sin cambio de precio
+#  - tipo: promocion
+#    subtipo: producto_gratis
+#    clasificacion_2: "combo cuarto de libra"
+#    producto_gratis: "nuggets"         # descriptivo, aparece en el output
+#    canal: automac                     # opcional
 
-  # ── Escenario climático ───────────────────────────────────────────────────
-  # - tipo: clima
-  #   variacion_pct: -0.20            # (GENIA) -0.20 = invierno 20% más lluvioso/frío
+# ── LANZAMIENTO ───────────────────────────────────────────────────────────────
+# Simula el efecto de lanzar un producto nuevo en una categoría.
+# Usa el patrón histórico de lanzamientos anteriores de esa categoría.
+#
+#  - tipo: lanzamiento
+#    clasificacion_2: "mcflurry"        # categoría donde se lanza
+#    nombre_referencia: "McFlurry Brownie nuevo"  # descriptivo
+#    proxy_lanzamiento: "McFlurry Braunitos Tatakua"  # opcional: lanzamiento histórico similar
+
+# ── ESTRUCTURAL ───────────────────────────────────────────────────────────────
+# Simula agregar un canal a una o todas las sucursales.
+# Compara ventas históricas de sucursales con vs sin ese canal.
+#
+#  - tipo: estructural
+#    canal: automac                     # automac | delivery | app | restaurante | centro_postres
+#    sucursal: 1234                     # opcional: api_id_integer. null = todas
+
+# ── COMPETENCIA ───────────────────────────────────────────────────────────────
+# Simula la apertura de un competidor cerca de una sucursal.
+# El impacto depende de la distancia: más cerca = mayor caída de ventas.
+#
+#  - tipo: competencia
+#    sucursal: 1234                     # api_id_integer afectado
+#    distancia_km: 0.5                  # distancia del competidor en km
+
+# ── CLIMA ─────────────────────────────────────────────────────────────────────
+# Simula un desvío climático respecto al promedio histórico.
+# Afecta distintas categorías según su sensibilidad (helados, café, etc.)
+#
+#  - tipo: clima
+#    variacion_pct: -0.20              # -0.20 = invierno 20% más frío/lluvioso
+#                                      # +0.20 = verano 20% más caluroso
