@@ -177,6 +177,7 @@ palancas:
     periodo_desde: "2025-04"
     periodo_hasta: "2025-06"
     canal: automac                       # automac | delivery | app | restaurante | centro_postres
+    zona: null                           # barrio | distrito | dpto | null = todo el país
 
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -195,6 +196,7 @@ palancas:
     periodo_desde: "2025-04"
     periodo_hasta: "2025-06"
     distancia_km: 0.5            # distancia estimada del competidor en kilómetros
+    zona: null                   # barrio | distrito | dpto | null = todo el país
 
 
   # ════════════════════════════════════════════════════════════════════════════

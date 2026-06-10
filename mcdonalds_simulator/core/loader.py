@@ -270,6 +270,23 @@ def load_lanzamientos_por_clasificacion(clasificacion_2: str) -> pd.DataFrame:
     return query_df(sql, {"clf2": clasificacion_2})
 
 
+def load_zonas_restaurantes() -> pd.DataFrame:
+    """
+    Retorna los atributos de zona de cada sucursal desde dim_restaurantes.
+    Columnas: sucursal (VARCHAR), barrio, distrito, dpto
+    """
+    sql = f"""
+        SELECT
+            CAST(api_id_integer AS VARCHAR) AS sucursal,
+            barlo_desc                      AS barrio,
+            distrito_desc                   AS distrito,
+            dpto_desc                       AS dpto
+        FROM {TABLE_DIM_RESTAURANTES}
+        WHERE api_id_integer IS NOT NULL
+    """
+    return query_df(sql)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Atributos de restaurantes
 # ─────────────────────────────────────────────────────────────────────────────
