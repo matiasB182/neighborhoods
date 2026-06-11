@@ -161,20 +161,19 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     return []
 
 
-def _tipo_sheet_de_campania(campania: str) -> str | None:
-    """Devuelve el tipo_sheet de los productos de una campaña."""
+def _clf2s_de_campania(campania: str) -> list[str]:
+    """Devuelve las clasificacion_2_sheet de los productos de una campaña."""
     from core.db import query_df, TABLE_PROMOCIONES, TABLE_DIM_ARTICULO
     sql = f"""
-        SELECT DISTINCT dav.tipo_sheet
+        SELECT DISTINCT dav.clasificacion_2_sheet
         FROM {TABLE_PROMOCIONES} p
         JOIN {TABLE_DIM_ARTICULO} dav
             ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
         WHERE p.campania = %(camp)s
-          AND dav.tipo_sheet IS NOT NULL
-        LIMIT 1
+          AND dav.clasificacion_2_sheet IS NOT NULL
     """
     df = query_df(sql, {"camp": campania})
-    return df["tipo_sheet"].iloc[0] if not df.empty else None
+    return df["clasificacion_2_sheet"].tolist() if not df.empty else []
 
 
 def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
@@ -200,39 +199,30 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         pm_hasta = fh[:7]
         campania = row["campania"]
 
-        # Medir a nivel tipo_sheet para capturar SKUs especiales de promo
-        # (ej: "Promo 2x1 Cuarto de Libra" + "Combo Cuarto de Libra" = toda la familia)
-        tipo_medicion = _tipo_sheet_de_campania(campania)
-        if not tipo_medicion:
+        # Clasificaciones exactas que participan en esta campaña
+        clf2s_campania = _clf2s_de_campania(campania)
+        if not clf2s_campania:
             continue
 
-        # Ventas reales durante la campaña — toda la familia de productos (tipo_sheet)
+        placeholders = ", ".join([f"%(clf2_{i})s" for i in range(len(clf2s_campania))])
+        params_clf2 = {f"clf2_{i}": v for i, v in enumerate(clf2s_campania)}
+
+        # Ventas reales durante la campaña — solo los productos de la campaña
         sql_ventas = f"""
             SELECT SUM(fv.cantidad) AS unidades_reales
             FROM {TABLE_FACT_VENTAS} fv
             JOIN {TABLE_DIM_ARTICULO} dav
                 ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.tipo_sheet = %(tipo)s
+            WHERE dav.clasificacion_2_sheet IN ({placeholders})
               AND fv.fecha BETWEEN %(fd)s AND %(fh)s
         """
-        df_v = query_df(sql_ventas, {"tipo": tipo_medicion, "fd": fd, "fh": fh})
+        df_v = query_df(sql_ventas, {**params_clf2, "fd": fd, "fh": fh})
         unidades_reales = float(df_v["unidades_reales"].iloc[0] or 0)
         if unidades_reales == 0:
             continue
 
-        # Forecast diario — clasificaciones del tipo_sheet (sin multiplicar por productos)
-        sql_clf2s = f"""
-            SELECT DISTINCT clasificacion_2_sheet
-            FROM {TABLE_DIM_ARTICULO}
-            WHERE tipo_sheet = %(tipo)s AND clasificacion_2_sheet IS NOT NULL
-        """
-        df_clf2s = query_df(sql_clf2s, {"tipo": tipo_medicion})
-        if df_clf2s.empty:
-            continue
-        clf2s = df_clf2s["clasificacion_2_sheet"].tolist()
-        placeholders = ", ".join([f"%(clf2fc_{i})s" for i in range(len(clf2s))])
-        params_fc = {f"clf2fc_{i}": v for i, v in enumerate(clf2s)}
-        params_fc.update({"pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        # Forecast para esas mismas clasificaciones
+        params_fc = {**params_clf2, "pm_desde": pm_desde, "pm_hasta": pm_hasta}
         sql_fc = f"""
             SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
                    COUNT(DISTINCT periodo) AS n_periodos
@@ -262,8 +252,8 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
 
         uplift = (unidades_reales - fc_periodo) / fc_periodo
         uplifts.append(uplift)
-        log.info("Campaña '%s' (%s → %s) [tipo_sheet: %s]: uplift medido %+.1f%%",
-                 campania, fd, fh, tipo_medicion, uplift * 100)
+        log.info("Campaña '%s' (%s → %s) [%d clf2s]: uplift medido %+.1f%%",
+                 campania, fd, fh, len(clf2s_campania), uplift * 100)
 
     if not uplifts:
         return None
