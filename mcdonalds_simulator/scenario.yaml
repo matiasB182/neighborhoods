@@ -71,8 +71,10 @@ palancas:
     subtipo: descuento
     clasificacion_2: "combo big mac"  # texto libre, el sistema busca la más parecida
     sucursal: null                    # número de sucursal | null = todas
-    periodo_desde: "2025-04"
-    periodo_hasta: "2025-06"
+    periodo_desde: "2025-04"          # mes en que cae la promo (YYYY-MM)
+    periodo_hasta: "2025-04"
+    fecha_desde: null                 # fecha exacta de inicio (YYYY-MM-DD) | null = mes completo
+    fecha_hasta: null                 # fecha exacta de fin    (YYYY-MM-DD) | null = mes completo
     cambio_pct: -0.30                 # -0.30 = 30% de descuento
     canal: null                       # automac | delivery | app | restaurante | null = todas
 
@@ -93,7 +95,9 @@ palancas:
     clasificacion_2: "mcflurry oreo"  # texto libre, el sistema busca la más parecida
     sucursal: null                    # número de sucursal | null = todas
     periodo_desde: "2025-04"
-    periodo_hasta: "2025-06"
+    periodo_hasta: "2025-04"
+    fecha_desde: null                 # fecha exacta de inicio (YYYY-MM-DD) | null = mes completo
+    fecha_hasta: null                 # fecha exacta de fin    (YYYY-MM-DD) | null = mes completo
     canal: null                       # automac | delivery | app | restaurante | null = todas
 
 
@@ -112,7 +116,9 @@ palancas:
     clasificacion_2: "triple con queso"  # texto libre, el sistema busca la más parecida
     sucursal: null                       # número de sucursal | null = todas
     periodo_desde: "2025-04"
-    periodo_hasta: "2025-06"
+    periodo_hasta: "2025-04"
+    fecha_desde: null                    # fecha exacta de inicio (YYYY-MM-DD) | null = mes completo
+    fecha_hasta: null                    # fecha exacta de fin    (YYYY-MM-DD) | null = mes completo
     precio: 15000                        # precio promocional en guaraníes
     canal: null                          # automac | delivery | app | restaurante | null = todas
 
@@ -133,7 +139,9 @@ palancas:
     clasificacion_2: "combo cuarto de libra"  # categoría del producto principal
     sucursal: null                            # número de sucursal | null = todas
     periodo_desde: "2025-04"
-    periodo_hasta: "2025-06"
+    periodo_hasta: "2025-04"
+    fecha_desde: null                         # fecha exacta de inicio (YYYY-MM-DD) | null = mes completo
+    fecha_hasta: null                         # fecha exacta de fin    (YYYY-MM-DD) | null = mes completo
     producto_gratis: "nuggets"                # nombre del regalo (solo descriptivo)
     canal: null                               # automac | delivery | app | restaurante | null = todas
 

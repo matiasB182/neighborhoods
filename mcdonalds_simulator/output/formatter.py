@@ -168,9 +168,23 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
 
     # ── PROMOCIÓN ─────────────────────────────────────────────────────────
     elif tipo == "promocion":
-        subtipo = palanca.get("subtipo", "descuento")
-        canal   = palanca.get("canal")
-        clf2    = palanca.get("clasificacion_2", "")
+        subtipo     = palanca.get("subtipo", "descuento")
+        canal       = palanca.get("canal")
+        fecha_desde = palanca.get("fecha_desde")
+        fecha_hasta = palanca.get("fecha_hasta")
+
+        # Bloque de duración si se especificaron fechas exactas
+        if fecha_desde and fecha_hasta:
+            from datetime import date
+            d_desde = date.fromisoformat(fecha_desde)
+            d_hasta = date.fromisoformat(fecha_hasta)
+            n_dias  = (d_hasta - d_desde).days + 1
+            fraccion = float(df["promo_fraccion_mes"].mean()) if "promo_fraccion_mes" in df.columns else None
+            lines.append(f"La promoción dura {n_dias} día(s): del {fecha_desde} al {fecha_hasta}.")
+            if fraccion is not None:
+                lines.append(f"Eso representa el {fraccion:.0%} del mes — el uplift se escala")
+                lines.append(f"proporcionalmente: solo esa fracción del forecast es afectada.")
+            lines.append("")
 
         if subtipo in ("descuento", "2x1", "precio_fijo"):
             cambio = -0.50 if subtipo == "2x1" else float(palanca.get("cambio_pct", 0))
@@ -181,12 +195,12 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
             else:
                 lines.append(f"Se aplicó un descuento de {cambio:.0%} sobre el precio actual.")
 
-            if "elasticidad_usada" in df.columns:
-                e = float(df["elasticidad_usada"].iloc[0])
-                c = str(df["confianza_elasticidad"].iloc[0]) if "confianza_elasticidad" in df.columns else "?"
+            if "promo_elasticidad" in df.columns:
+                e = float(df["promo_elasticidad"].iloc[0])
+                c = str(df["promo_confianza"].iloc[0]) if "promo_confianza" in df.columns else "?"
                 impacto_vol = cambio * e
                 lines.append(f"Con elasticidad {e:.2f}, ese descuento genera un aumento")
-                lines.append(f"estimado de {impacto_vol:+.1%} en unidades vendidas.")
+                lines.append(f"estimado de {impacto_vol:+.1%} en unidades durante la promo.")
                 lines.append("")
                 _explicar_confianza(lines, c, e)
 
@@ -195,7 +209,7 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
             conf      = str(df["promo_confianza"].iloc[0]) if "promo_confianza" in df.columns else "?"
             campanias_raw = str(df["promo_campanias"].iloc[0]) if "promo_campanias" in df.columns else ""
             campanias = [c for c in campanias_raw.split("|||") if c]
-            lines.append(f"El uplift estimado de regalar un producto es {uplift:+.1%}.")
+            lines.append(f"El uplift estimado de regalar un producto es {uplift:+.1%} durante la promo.")
             if conf == "histórico":
                 lines.append(f"Este número viene de promos similares registradas en el histórico.")
             else:
