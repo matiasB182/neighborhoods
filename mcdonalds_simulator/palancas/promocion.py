@@ -76,17 +76,30 @@ def _cambio_pct_para_precio_fijo(clasificacion_2: str, precio_fijo: float,
     return (precio_fijo - precio_actual) / precio_actual
 
 
-def _campanias_similares(clasificacion_2: str) -> list[str]:
+def _inferir_tipo_promo(campania: str) -> str:
+    c = campania.lower()
+    if "2x1" in c:
+        return "2x1"
+    if any(x in c for x in ["gratis", "regalo", "te llevás", "llevás"]):
+        return "producto_gratis"
+    if any(x in c for x in ["gs.", " mil", "miles"]):
+        return "precio_fijo"
+    if any(x in c for x in ["% off", "% de desc", "off "]):
+        return "descuento_pct"
+    return "otro"
+
+
+def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     """
-    Retorna campañas históricas del mismo tipo_sheet dominante que clasificacion_2.
-    Si no hay tipo_sheet, cae a buscar por clasificacion_2 directamente.
+    Retorna campañas históricas del mismo tipo_sheet y mismo tipo de promo.
+    Filtra por tipo inferido del nombre de campaña para mostrar solo referencias relevantes.
     """
     from core.db import query_df, TABLE_DIM_ARTICULO, TABLE_PROMOCIONES
     from core.loader import load_tipo_sheet
 
-    tipo = load_tipo_sheet(clasificacion_2)
+    tipo_sheet = load_tipo_sheet(clasificacion_2)
 
-    if tipo:
+    if tipo_sheet:
         sql = f"""
             SELECT DISTINCT p.campania
             FROM {TABLE_PROMOCIONES} p
@@ -95,8 +108,8 @@ def _campanias_similares(clasificacion_2: str) -> list[str]:
             WHERE dav.tipo_sheet = %(tipo)s
             ORDER BY 1
         """
-        params = {"tipo": tipo}
-        log.info("Buscando campañas históricas para tipo_sheet '%s'.", tipo)
+        params = {"tipo": tipo_sheet}
+        log.info("Buscando campañas históricas para tipo_sheet '%s'.", tipo_sheet)
     else:
         sql = f"""
             SELECT DISTINCT p.campania
@@ -107,11 +120,20 @@ def _campanias_similares(clasificacion_2: str) -> list[str]:
             ORDER BY 1
         """
         params = {"clf2": clasificacion_2}
-        log.warning("Sin tipo_sheet para '%s'. Buscando campañas por clasificacion_2.", clasificacion_2)
 
     try:
         df = query_df(sql, params)
-        return df["campania"].tolist() if not df.empty else []
+        if df.empty:
+            return []
+        todas = df["campania"].tolist()
+        # Filtrar por tipo de promo inferido del nombre
+        filtradas = [c for c in todas if _inferir_tipo_promo(c) == subtipo]
+        if filtradas:
+            log.info("Campañas similares (%s, %s): %d encontradas.", subtipo, tipo_sheet, len(filtradas))
+            return filtradas
+        # Si no hay del mismo tipo, devolver todas (mejor que nada)
+        log.warning("Sin campañas de tipo '%s' para '%s'. Mostrando todas.", subtipo, clasificacion_2)
+        return todas
     except Exception:
         return []
 
@@ -123,7 +145,7 @@ def _uplift_producto_gratis(clasificacion_2: str) -> tuple[float, str, list[str]
     así que siempre usa el default conservador.
     Retorna (uplift, confianza, campañas_encontradas).
     """
-    campanias = _campanias_similares(clasificacion_2)
+    campanias = _campanias_similares(clasificacion_2, "producto_gratis")
     if campanias:
         log.info("Campañas históricas encontradas para '%s': %s", clasificacion_2, campanias)
     log.warning("Sin fechas de promo en la tabla — usando default +%.0f%%. Referencia: %s",
