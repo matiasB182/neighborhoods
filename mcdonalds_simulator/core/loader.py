@@ -90,6 +90,19 @@ def resolver_clasificacion_2(texto: str) -> list[str]:
     candidatos = df_all["clasificacion_2"].tolist()
     texto_lower = texto.lower()
     scored = sorted(candidatos, key=lambda c: -_score_fuzzy(texto_lower, c))
+
+    mejor_score = _score_fuzzy(texto_lower, scored[0])
+    # Umbral mínimo: si el mejor match tiene score bajo, ningún candidato es válido
+    UMBRAL_MINIMO = 1.5
+    if mejor_score < UMBRAL_MINIMO:
+        log.error(
+            "No se encontró clasificacion_2 para '%s' — el mejor match fue '%s' (score %.2f < %.1f). "
+            "Verificá que exista en el forecast o corregí el nombre.",
+            texto, scored[0], mejor_score, UMBRAL_MINIMO
+        )
+        return []
+
+    log.info("clasificacion_2 resuelta: '%s' → '%s' (score fuzzy: %.2f)", texto, scored[0], mejor_score)
     return [scored[0]]
 
 

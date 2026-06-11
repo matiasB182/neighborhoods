@@ -68,7 +68,6 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
             log.error("No se encontró ninguna clasificacion_2 que coincida con '%s'.", clf2_texto)
             return pd.DataFrame(), nombre
         clf2_exactos = matches
-        log.info("clasificacion_2 resuelta: '%s' → '%s'", clf2_texto, matches[0])
 
     log.info("Cargando forecast baseline...")
     df = load_forecast(clf2_exactos, sucursal, periodo_desde, periodo_hasta)
