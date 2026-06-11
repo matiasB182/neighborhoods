@@ -31,13 +31,19 @@ palancas:
   #
   # ¿Qué pasa si subo o bajo el precio de una categoría en un % fijo?
   #
-  # CÓMO SE CALCULA:
-  #   1. Busca la elasticidad histórica de la categoría:
-  #      elasticidad = Δ% unidades / Δ% precio  (promedio de cambios históricos)
-  #      Ej: elasticidad -0.8 → si el precio sube 10%, las ventas caen 8%
-  #   2. impacto_volumen = cambio_pct × elasticidad
-  #   3. unidades_simuladas = forecast × (1 + impacto_volumen)
-  #   4. ingreso_simulado  = unidades_simuladas × precio_nuevo
+  # FÓRMULA:
+  #   elasticidad      = Δ% unidades / Δ% precio  (calculada de datos históricos)
+  #   impacto_volumen  = cambio_pct × elasticidad
+  #   unidades_sim     = forecast × (1 + impacto_volumen)
+  #   ingreso_sim      = unidades_sim × (precio_actual × (1 + cambio_pct))
+  #
+  # EJEMPLO PRÁCTICO:
+  #   forecast Combo Big Mac mayo = 10.000 unidades
+  #   elasticidad histórica       = -0.8
+  #   cambio_pct                  = +0.10  (sube 10% el precio)
+  #   → impacto_volumen = 0.10 × -0.8 = -0.08  (caen 8% las unidades)
+  #   → unidades_sim    = 10.000 × (1 - 0.08) = 9.200 unidades
+  #   → si precio base era Gs. 35.000, ingreso pasa de Gs. 350M a Gs. 354M
   #
   # Parámetros:
   #   clasificacion_2 → texto libre, el sistema busca la categoría más parecida
@@ -45,10 +51,6 @@ palancas:
   #   periodo_desde   → mes de inicio (YYYY-MM)
   #   periodo_hasta   → mes de fin    (YYYY-MM)
   #   cambio_pct      → positivo = sube precio | negativo = baja precio
-  #
-  # Ejemplos:
-  #   "¿Qué pasa si subo 10% el Combo Big Mac?"  → cambio_pct: 0.10
-  #   "¿Qué pasa si bajo 15% el McFlurry?"       → cambio_pct: -0.15
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: precio
     activo: false
@@ -63,27 +65,29 @@ palancas:
   # ════════════════════════════════════════════════════════════════════════════
   # 2) PRECIO — OPTIMIZAR
   #
-  # ¿Cuál es el precio óptimo para maximizar ingresos, unidades o llegar al
+  # ¿Cuál es el precio óptimo para maximizar ingresos, volumen o llegar al
   # punto de equilibrio?
   #
-  # CÓMO SE CALCULA:
-  #   Evalúa cada cambio de precio en pasos de 1% dentro del rango definido
-  #   y elige el que mejor cumple el objetivo indicado.
+  # FÓRMULA:
+  #   Para cada cambio_pct en pasos de 1% dentro del rango definido:
+  #     unidades_sim = forecast × (1 + cambio_pct × elasticidad)
+  #     ingreso_sim  = unidades_sim × (precio_actual × (1 + cambio_pct))
+  #   Se elige el cambio_pct que mejor cumple el objetivo.
+  #
+  # EJEMPLO PRÁCTICO:
+  #   objetivo: max_ingreso | rango: -30% a +30%
+  #   El sistema prueba -30%, -29%, ..., 0%, +1%, ..., +30%
+  #   y devuelve el precio que genera el mayor ingreso total.
+  #
+  #   Resultado típico: con elasticidad -0.8, el óptimo suele estar en +10% a +15%
+  #   (sube el precio lo suficiente para compensar la caída de volumen)
   #
   # Parámetros:
-  #   clasificacion_2 → texto libre, el sistema busca la categoría más parecida
-  #   sucursal        → número de sucursal, o null para todas
-  #   periodo_desde   → mes de inicio (YYYY-MM)
-  #   periodo_hasta   → mes de fin    (YYYY-MM)
-  #   objetivo        → max_ingreso  = ¿a qué precio se maximiza el ingreso?
-  #                     max_unidades = ¿a qué precio se venden más unidades?
-  #                     breakeven    = ¿hasta cuánto puedo subir sin perder ingreso?
-  #   rango_desde     → límite inferior del rango a explorar (ej: -0.30 = -30%)
-  #   rango_hasta     → límite superior del rango a explorar (ej: +0.30 = +30%)
-  #
-  # Ejemplos:
-  #   "¿A qué precio maximizo el ingreso del Combo Big Mac?"
-  #   "¿Cuánto puedo subir el McFlurry sin perder plata?"
+  #   objetivo    → max_ingreso  = ¿a qué precio se maximiza el ingreso?
+  #                 max_unidades = ¿a qué precio se venden más unidades?
+  #                 breakeven    = ¿hasta cuánto puedo subir sin perder ingreso?
+  #   rango_desde → límite inferior a explorar (ej: -0.30 = -30%)
+  #   rango_hasta → límite superior a explorar (ej: +0.30 = +30%)
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: precio
     activo: false
@@ -100,29 +104,21 @@ palancas:
   # ════════════════════════════════════════════════════════════════════════════
   # 3) PROMOCIÓN
   #
-  # ¿Qué impacto tendría una promoción sobre una categoría?
-  # Cambiar el subtipo según el tipo de promo:
+  # ¿Qué impacto tendría una promoción puntual sobre una categoría?
+  # Subpalancas disponibles:
+  #   3.1) descuento       → % de descuento sobre el precio
+  #   3.2) 2x1             → llevás 2 pagás 1 (50% OFF efectivo)
+  #   3.3) precio_fijo     → precio especial en guaraníes
+  #   3.4) producto_gratis → regalo al comprar otro producto
   #
-  #   subtipo: descuento      → % de descuento sobre el precio
-  #   subtipo: 2x1            → llevás 2 pagás 1 (equivale a 50% OFF)
-  #   subtipo: precio_fijo    → precio especial en guaraníes
-  #   subtipo: producto_gratis → regalo al comprar otro producto
+  # BASE COMÚN A TODAS LAS PROMOS:
+  #   Las promos duran días, no meses. El forecast se escala a los días exactos:
+  #   forecast_promo = forecast_mensual / días_del_mes × días_de_la_promo
   #
-  # CÓMO SE CALCULA (todos los subtipos):
-  #   1. forecast_promo = forecast_mensual / días_del_mes × días_de_la_promo
-  #      (el forecast se escala a los días exactos que dura la promo)
-  #   2. Se calcula el impacto sobre ese forecast_promo según el subtipo:
-  #
-  #   descuento / 2x1 / precio_fijo:
-  #     cambio_pct efectivo = descuento aplicado (2x1 = -50% automático)
-  #     impacto_volumen = cambio_pct × elasticidad_histórica
-  #     unidades_simuladas = forecast_promo × (1 + impacto_volumen)
-  #
-  #   producto_gratis:
-  #     uplift = medido sobre promos históricas similares con fechas disponibles
-  #              (ventas_reales_promo - forecast_ese_período) / forecast_ese_período
-  #     Si no hay fechas cargadas → uplift = +10% supuesto conservador
-  #     unidades_simuladas = forecast_promo × (1 + uplift)
+  # EJEMPLO:
+  #   forecast Combo Big Mac junio = 10.000 unidades (30 días)
+  #   promo dura 3 días (15 al 17 de junio)
+  #   → forecast_promo = 10.000 / 30 × 3 = 1.000 unidades base de la promo
   #
   # Parámetros comunes:
   #   clasificacion_2 → texto libre, el sistema busca la categoría más parecida
@@ -130,69 +126,139 @@ palancas:
   #   fecha_desde     → inicio de la promo (YYYY-MM-DD)
   #   fecha_hasta     → fin de la promo    (YYYY-MM-DD) — mismo día = promo de 1 día
   #   canal           → automac | delivery | app | restaurante | null = todos
-  #
   # ════════════════════════════════════════════════════════════════════════════
 
-  # — subtipo: descuento ——————————————————————————————————————————————————————
-  # Ejemplos:
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3.1) PROMOCIÓN — DESCUENTO
+  #
+  # ¿Qué impacto tendría ofrecer un % de descuento sobre el precio normal?
+  #
+  # FÓRMULA:
+  #   impacto_volumen  = cambio_pct × elasticidad_histórica
+  #   unidades_sim     = forecast_promo × (1 + impacto_volumen)
+  #   ingreso_sim      = unidades_sim × (precio_actual × (1 + cambio_pct))
+  #
+  # EJEMPLO PRÁCTICO:
+  #   forecast_promo Combo Big Mac (3 días) = 1.000 unidades
+  #   elasticidad histórica                 = -0.8
+  #   cambio_pct                            = -0.30  (30% de descuento)
+  #   → impacto_volumen = -0.30 × -0.8 = +0.24  (suben 24% las unidades)
+  #   → unidades_sim    = 1.000 × 1.24 = 1.240 unidades en los 3 días
+  #
+  # Ejemplos de uso:
   #   "McDelivery Week: 30% OFF Combo Big Mac por Delivery"
   #   "Automac Days: 25% OFF Combo Cuarto de Libra"
-  # ———————————————————————————————————————————————————————————————————————————
+  # ────────────────────────────────────────────────────────────────────────────
   - tipo: promocion
     activo: false
     subtipo: descuento
     clasificacion_2: "combo big mac"
     sucursal: null
     fecha_desde: "2025-06-15"
-    fecha_hasta: "2025-06-15"
+    fecha_hasta: "2025-06-17"
     cambio_pct: -0.30              # -0.30 = 30% de descuento
     canal: null
 
-  # — subtipo: 2x1 ————————————————————————————————————————————————————————————
-  # Ejemplos:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3.2) PROMOCIÓN — 2x1
+  #
+  # ¿Qué impacto tendría un 2x1 en una categoría?
+  # (Llevás 2 unidades pagando 1 = precio efectivo por unidad baja 50%)
+  #
+  # FÓRMULA:
+  #   cambio_pct       = -0.50  (automático, no se configura)
+  #   impacto_volumen  = -0.50 × elasticidad_histórica
+  #   unidades_sim     = forecast_promo × (1 + impacto_volumen)
+  #
+  # EJEMPLO PRÁCTICO:
+  #   forecast_promo McFlurry Oreo (1 día viernes) = 200 unidades
+  #   elasticidad histórica                        = -1.2
+  #   → impacto_volumen = -0.50 × -1.2 = +0.60  (suben 60% las unidades)
+  #   → unidades_sim    = 200 × 1.60 = 320 unidades ese viernes
+  #
+  # Ejemplos de uso:
   #   "2x1 McFlurry Oreo todos los viernes por Automac"
   #   "Día de la hamburguesa: 2x1 McCombo Cuarto de Libra"
-  # ———————————————————————————————————————————————————————————————————————————
+  # ────────────────────────────────────────────────────────────────────────────
   - tipo: promocion
     activo: false
     subtipo: 2x1
     clasificacion_2: "mcflurry oreo"
     sucursal: null
-    fecha_desde: "2025-06-15"
-    fecha_hasta: "2025-06-15"
+    fecha_desde: "2025-06-20"
+    fecha_hasta: "2025-06-20"
     canal: null
 
-  # — subtipo: precio_fijo ————————————————————————————————————————————————————
-  # El sistema convierte el precio fijo a cambio_pct comparando con el precio
-  # promedio histórico de la categoría, y luego aplica la elasticidad.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3.3) PROMOCIÓN — PRECIO FIJO
   #
-  # Ejemplos:
+  # ¿Qué impacto tendría ofrecer un precio especial en guaraníes?
+  #
+  # FÓRMULA:
+  #   cambio_pct       = (precio_fijo - precio_promedio_histórico) / precio_promedio_histórico
+  #   impacto_volumen  = cambio_pct × elasticidad_histórica
+  #   unidades_sim     = forecast_promo × (1 + impacto_volumen)
+  #   ingreso_sim      = unidades_sim × precio_fijo
+  #
+  # EJEMPLO PRÁCTICO:
+  #   precio promedio histórico Triple con Queso = Gs. 22.000
+  #   precio fijo promocional                    = Gs. 15.000
+  #   → cambio_pct      = (15.000 - 22.000) / 22.000 = -0.318  (-31.8%)
+  #   → impacto_volumen = -0.318 × -0.8 = +0.254  (suben 25% las unidades)
+  #   → forecast_promo (3 días) = 900 unidades
+  #   → unidades_sim = 900 × 1.254 = 1.129 unidades
+  #
+  # Ejemplos de uso:
   #   "Triple con Queso a Gs. 15.000 en restaurantes y Automac"
-  #   "Combo Cuarto de Libra a Gs. 20.000"
-  # ———————————————————————————————————————————————————————————————————————————
+  #   "Combo Cuarto de Libra a Gs. 20.000 por la App"
+  # ────────────────────────────────────────────────────────────────────────────
   - tipo: promocion
     activo: false
     subtipo: precio_fijo
     clasificacion_2: "triple con queso"
     sucursal: null
     fecha_desde: "2025-06-15"
-    fecha_hasta: "2025-06-15"
+    fecha_hasta: "2025-06-17"
     precio: 15000                  # precio promocional en guaraníes
     canal: null
 
-  # — subtipo: producto_gratis ————————————————————————————————————————————————
-  # Ejemplos:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3.4) PROMOCIÓN — PRODUCTO GRATIS
+  #
+  # ¿Qué impacto tendría regalar un producto al comprar otro?
+  # (No hay cambio de precio → el efecto es uplift de demanda pura)
+  #
+  # FÓRMULA:
+  #   uplift       = medido sobre promos históricas similares con fechas cargadas:
+  #                  (ventas_reales_promo - forecast_ese_período) / forecast_ese_período
+  #                  promediado sobre todas las promos comparables
+  #   unidades_sim = forecast_promo × (1 + uplift)
+  #
+  #   Si no hay fechas cargadas en la tabla de promos históricas:
+  #   → uplift = +10% supuesto conservador  (se indica en el output como "supuesto")
+  #   Para habilitar el cálculo real: agregar col D (fecha_desde) y col E (fecha_hasta)
+  #   en la hoja "Códigos-Promo" del Excel y volver a correr el ETL.
+  #
+  # EJEMPLO PRÁCTICO:
+  #   forecast_promo Combo Cuarto de Libra (2 días) = 600 unidades
+  #   uplift histórico promos producto_gratis similares = +12%
+  #   → unidades_sim = 600 × 1.12 = 672 unidades
+  #
+  # Ejemplos de uso:
   #   "McNuggets gratis comprando un McCombo Cuarto de Libra"
   #   "Comprando 1 McCombo por PeYa te llevás 4 McNuggets de regalo"
   #   "Día de la Papa Frita: 1 McPapas mediana gratis por la App"
-  # ———————————————————————————————————————————————————————————————————————————
+  # ────────────────────────────────────────────────────────────────────────────
   - tipo: promocion
     activo: false
     subtipo: producto_gratis
     clasificacion_2: "combo cuarto de libra"
     sucursal: null
     fecha_desde: "2025-06-15"
-    fecha_hasta: "2025-06-15"
+    fecha_hasta: "2025-06-16"
     producto_gratis: "nuggets"     # nombre del regalo (solo descriptivo)
     canal: null
 
@@ -202,15 +268,22 @@ palancas:
   #
   # ¿Qué impacto tendría lanzar un producto nuevo en una categoría?
   #
-  # CÓMO SE CALCULA:
-  #   1. Busca lanzamientos históricos de la misma categoría (o el proxy indicado)
-  #   2. Para cada lanzamiento histórico calcula el uplift mes a mes:
-  #      uplift_mes_n = (ventas_mes_n - promedio_histórico) / promedio_histórico
-  #   3. Promedia el patrón entre todos los lanzamientos de referencia
-  #   4. unidades_simuladas[mes] = forecast[mes] × (1 + uplift[mes_relativo])
-  #      mes_relativo 0 = mes del lanzamiento, 1 = siguiente mes, etc.
-  #   Si no hay lanzamientos de la misma categoría, usa el patrón promedio
-  #   del mismo tipo de producto (postres, combos, etc.) o el default conservador:
+  # FÓRMULA:
+  #   Para cada lanzamiento histórico de referencia:
+  #     baseline     = promedio de ventas mensuales de la categoría
+  #     uplift_mes_n = (ventas_mes_n - baseline) / baseline
+  #   Se promedian los uplift por mes relativo entre todos los lanzamientos.
+  #   unidades_sim[mes] = forecast[mes] × (1 + uplift[mes_relativo])
+  #
+  # EJEMPLO PRÁCTICO:
+  #   Lanzamiento nuevo McFlurry, categoría tiene 3 lanzamientos históricos.
+  #   Patrón promedio calculado:
+  #     mes 0 (lanzamiento): +18%  → forecast 5.000 × 1.18 = 5.900 unidades
+  #     mes 1:               +12%  → forecast 5.000 × 1.12 = 5.600 unidades
+  #     mes 2:               +7%   → forecast 5.000 × 1.07 = 5.350 unidades
+  #     mes 3 en adelante:   vuelve al nivel base del forecast
+  #
+  #   Si no hay lanzamientos históricos de la categoría → usa patrón default:
   #   mes 0: +18% | mes 1: +12% | mes 2: +7% | mes 3: +4% | mes 4: +2% | mes 5: +1%
   #
   # Parámetros:
@@ -221,10 +294,6 @@ palancas:
   #   nombre_referencia  → nombre descriptivo del producto nuevo (solo para el output)
   #   proxy_lanzamiento  → nombre de un lanzamiento histórico similar como referencia
   #                        null = el sistema elige automáticamente
-  #
-  # Ejemplos:
-  #   "¿Qué impacto tendría lanzar un McFlurry nuevo sabor brownie?"
-  #   "¿Cómo afectaría agregar un nuevo Combo al menú?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: lanzamiento
     activo: false
@@ -241,26 +310,27 @@ palancas:
   #
   # ¿Qué impacto tendría agregar un canal de venta a una o varias sucursales?
   #
-  # CÓMO SE CALCULA:
-  #   1. Identifica sucursales que YA tienen el canal (grupo con canal)
-  #   2. Identifica sucursales SIN el canal (grupo sin canal)
-  #   3. Si se especifica zona, restringe a sucursales del mismo barrio/distrito/dpto
-  #      para comparar sucursales más similares entre sí
-  #   4. efecto = (ventas_promedio_con_canal − ventas_promedio_sin_canal)
-  #               / ventas_promedio_sin_canal
-  #   5. unidades_simuladas = forecast × (1 + efecto)
+  # FÓRMULA:
+  #   avg_con_canal = promedio de ventas históricas de sucursales CON el canal
+  #   avg_sin_canal = promedio de ventas históricas de sucursales SIN el canal
+  #   efecto        = (avg_con_canal - avg_sin_canal) / avg_sin_canal
+  #   unidades_sim  = forecast × (1 + efecto)
+  #
+  # EJEMPLO PRÁCTICO:
+  #   Sucursales con Automac venden en promedio 12.000 unidades/mes de combos.
+  #   Sucursales sin Automac venden en promedio 9.000 unidades/mes de combos.
+  #   → efecto     = (12.000 - 9.000) / 9.000 = +33%
+  #   → forecast sucursal sin Automac = 8.500 unidades
+  #   → unidades_sim = 8.500 × 1.33 = 11.305 unidades si se agrega Automac
   #
   #   Nota: comparación observacional, no experimental. Sucursales con Automac
-  #   pueden tener más ventas también por su ubicación. La zona reduce ese sesgo.
+  #   pueden tener más ventas también por su ubicación. Usar zona para reducir
+  #   ese sesgo comparando sucursales más similares entre sí.
   #
   # Parámetros:
   #   canal     → automac | delivery | app | restaurante | centro_postres
   #   sucursal  → número de sucursal, o null para todas
   #   zona      → barrio | distrito | dpto | null = todo el país
-  #
-  # Ejemplos:
-  #   "¿Cuánto aumentarían las ventas si la sucursal 1234 tuviera Automac?"
-  #   "¿Qué impacto tendría habilitar Delivery en todas las sucursales?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: estructural
     activo: false
@@ -277,12 +347,21 @@ palancas:
   #
   # ¿Qué impacto tendría que un competidor abra cerca de una sucursal?
   #
-  # CÓMO SE CALCULA:
-  #   1. Busca sucursales que ya tienen competidores a distancia similar (±0.3km)
-  #   2. Si se especifica zona, restringe a sucursales del mismo barrio/distrito/dpto
-  #   3. efecto = (ventas_con_competidor − ventas_sin_competidor)
-  #               / ventas_sin_competidor  [siempre negativo o cero]
-  #   4. unidades_simuladas[sucursal_afectada] = forecast × (1 + efecto)
+  # FÓRMULA:
+  #   similares    = sucursales que ya tienen un competidor a distancia_km ± 0.3km
+  #   avg_con_comp = promedio de ventas históricas de esas sucursales
+  #   avg_sin_comp = promedio de ventas históricas de sucursales sin competidor cercano
+  #   efecto       = (avg_con_comp - avg_sin_comp) / avg_sin_comp  [siempre ≤ 0]
+  #   unidades_sim[sucursal_afectada] = forecast × (1 + efecto)
+  #   unidades_sim[resto]             = forecast  (sin cambio)
+  #
+  # EJEMPLO PRÁCTICO:
+  #   Sucursal 1234, competidor abre a 500m.
+  #   Sucursales con competidor a 300-800m → venden en prom. 9.200 unidades/mes.
+  #   Sucursales sin competidor cercano   → venden en prom. 10.000 unidades/mes.
+  #   → efecto     = (9.200 - 10.000) / 10.000 = -8%
+  #   → forecast sucursal 1234 = 11.500 unidades
+  #   → unidades_sim = 11.500 × 0.92 = 10.580 unidades
   #
   #   Si no hay sucursales comparables, usa supuestos por banda de distancia:
   #     < 300m → -15%  |  300-600m → -10%  |  600m-1km → -6%
@@ -292,10 +371,6 @@ palancas:
   #   sucursal     → número de la sucursal afectada (obligatorio)
   #   distancia_km → distancia estimada del competidor en kilómetros
   #   zona         → barrio | distrito | dpto | null = todo el país
-  #
-  # Ejemplos:
-  #   "¿Qué pasaría si Burger King abre a 500m de la sucursal 1234?"
-  #   "¿Cuánto afectaría un competidor a 1km de la sucursal 5678?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: competencia
     activo: false
@@ -312,16 +387,27 @@ palancas:
   #
   # ¿Qué impacto tendría un clima inusualmente frío, caluroso o lluvioso?
   #
-  # CÓMO SE CALCULA:
-  #   1. Cada categoría tiene un coeficiente de sensibilidad climática:
-  #        postres/helados:        muy sensibles al frío  (coef. ~ -0.35 a -0.40)
-  #        combos/hamburguesas:    poco sensibles         (coef. ~ -0.05)
-  #        café/bebidas calientes: suben con el frío      (coef. ~ +0.20)
-  #   2. efecto = variacion_pct × coeficiente_clima[categoría]
-  #   3. unidades_simuladas = forecast × (1 + efecto)
+  # FÓRMULA:
+  #   efecto       = variacion_pct × coeficiente_clima[categoría]
+  #   unidades_sim = forecast × (1 + efecto)
   #
-  #   variacion_pct es el desvío respecto al promedio histórico del período.
-  #   Ej: -0.20 = ese mes fue 20% más frío/lluvioso que el promedio histórico.
+  # EJEMPLO PRÁCTICO:
+  #   Escenario: junio 20% más frío que el promedio histórico → variacion_pct = -0.20
+  #
+  #   McFlurry (coef. -0.40 → muy sensible al frío, cae):
+  #   → efecto = -0.20 × -0.40 = -0.08  → McFlurry cae 8%
+  #   → forecast 3.000 unidades → unidades_sim = 3.000 × 0.92 = 2.760 unidades
+  #
+  #   McCafé (coef. +0.20 → sube con el frío):
+  #   → efecto = -0.20 × +0.20 = +0.04  → McCafé sube 4%
+  #   → forecast 1.000 unidades → unidades_sim = 1.000 × 1.04 = 1.040 unidades
+  #
+  #   Combos (coef. -0.05 → poco sensibles):
+  #   → efecto = -0.20 × -0.05 = -0.01  → caen apenas 1%
+  #
+  # RESUMEN DE IMPACTOS:
+  #   variacion_pct < 0 (más frío/lluvioso): helados/postres bajan | café sube | combos casi igual
+  #   variacion_pct > 0 (más caluroso):      helados/postres suben | café baja | combos casi igual
   #
   #   Nota: los coeficientes son supuestos de industria, no calculados sobre
   #   datos de McDonald's Paraguay. Usarlo como referencia indicativa.
@@ -329,10 +415,6 @@ palancas:
   # Parámetros:
   #   variacion_pct → negativo = más frío/lluvioso | positivo = más caluroso
   #   sucursal      → número de sucursal, o null para todas
-  #
-  # Ejemplos:
-  #   "¿Qué pasaría si junio es 20% más frío que el promedio histórico?"
-  #   "¿Cómo afecta un verano 15% más caluroso a las ventas de McFlurry?"
   # ════════════════════════════════════════════════════════════════════════════
   - tipo: clima
     activo: false
