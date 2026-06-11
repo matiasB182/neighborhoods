@@ -220,17 +220,27 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         if unidades_reales == 0:
             continue
 
-        # Forecast diario — toda la familia de productos (tipo_sheet via dim_articulo)
-        sql_fc = f"""
-            SELECT SUM(COALESCE(f.forecast, f.unidades)) AS forecast_total,
-                   COUNT(DISTINCT f.periodo) AS n_periodos
-            FROM {TABLE_FORECAST} f
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON f.clasificacion_2_sheet = dav.clasificacion_2_sheet
-            WHERE dav.tipo_sheet = %(tipo)s
-              AND f.periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
+        # Forecast diario — clasificaciones del tipo_sheet (sin multiplicar por productos)
+        sql_clf2s = f"""
+            SELECT DISTINCT clasificacion_2_sheet
+            FROM {TABLE_DIM_ARTICULO}
+            WHERE tipo_sheet = %(tipo)s AND clasificacion_2_sheet IS NOT NULL
         """
-        df_fc = query_df(sql_fc, {"tipo": tipo_medicion, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        df_clf2s = query_df(sql_clf2s, {"tipo": tipo_medicion})
+        if df_clf2s.empty:
+            continue
+        clf2s = df_clf2s["clasificacion_2_sheet"].tolist()
+        placeholders = ", ".join([f"%(clf2fc_{i})s" for i in range(len(clf2s))])
+        params_fc = {f"clf2fc_{i}": v for i, v in enumerate(clf2s)}
+        params_fc.update({"pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        sql_fc = f"""
+            SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
+                   COUNT(DISTINCT periodo) AS n_periodos
+            FROM {TABLE_FORECAST}
+            WHERE clasificacion_2_sheet IN ({placeholders})
+              AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
+        """
+        df_fc = query_df(sql_fc, params_fc)
         fc_total = float(df_fc["forecast_total"].iloc[0] or 0)
         n_meses  = int(df_fc["n_periodos"].iloc[0] or 1)
 
