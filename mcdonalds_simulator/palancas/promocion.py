@@ -161,12 +161,28 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     return []
 
 
+def _clf2_de_campania(campania: str) -> str | None:
+    """Devuelve la clasificacion_2_sheet de los productos de una campaña."""
+    from core.db import query_df, TABLE_PROMOCIONES, TABLE_DIM_ARTICULO
+    sql = f"""
+        SELECT DISTINCT dav.clasificacion_2_sheet
+        FROM {TABLE_PROMOCIONES} p
+        JOIN {TABLE_DIM_ARTICULO} dav
+            ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+        WHERE p.campania = %(camp)s
+          AND dav.clasificacion_2_sheet IS NOT NULL
+        LIMIT 1
+    """
+    df = query_df(sql, {"camp": campania})
+    return df["clasificacion_2_sheet"].iloc[0] if not df.empty else None
+
+
 def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
                        tipo_sheet: str | None) -> tuple[float, str] | None:
     """
     Dado un listado de campañas similares, busca las que tienen fechas en la DB
-    y calcula el uplift real: promedio de uplift diario medido en fact_ventas
-    durante cada período de campaña vs el forecast del mismo período.
+    y calcula el uplift real: ventas reales / forecast diario - 1, medido sobre
+    la categoría promovida en cada campaña (no necesariamente el target).
     Retorna (uplift_promedio, confianza) o None si no hay fechas.
     """
     from core.loader import load_fechas_campania
@@ -182,8 +198,12 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         fh = str(row["fecha_hasta"])[:10] if row["fecha_hasta"] else fd
         pm_desde = fd[:7]
         pm_hasta = fh[:7]
+        campania = row["campania"]
 
-        # Ventas reales durante la campaña (todas las sucursales, misma clasificacion)
+        # Usar la clasificacion_2 real de la campaña (puede ser CDL, McFlurry, etc.)
+        clf2_medicion = _clf2_de_campania(campania) or clasificacion_2
+
+        # Ventas reales durante la campaña de la categoría promovida
         sql_ventas = f"""
             SELECT SUM(fv.cantidad) AS unidades_reales
             FROM {TABLE_FACT_VENTAS} fv
@@ -192,12 +212,12 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
             WHERE dav.clasificacion_2_sheet = %(clf2)s
               AND fv.fecha BETWEEN %(fd)s AND %(fh)s
         """
-        df_v = query_df(sql_ventas, {"clf2": clasificacion_2, "fd": fd, "fh": fh})
+        df_v = query_df(sql_ventas, {"clf2": clf2_medicion, "fd": fd, "fh": fh})
         unidades_reales = float(df_v["unidades_reales"].iloc[0] or 0)
         if unidades_reales == 0:
             continue
 
-        # Forecast diario promedio para el mismo período
+        # Forecast diario promedio para la misma categoría y período
         sql_fc = f"""
             SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
                    COUNT(DISTINCT periodo) AS n_periodos
@@ -205,7 +225,7 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
             WHERE clasificacion_2_sheet = %(clf2)s
               AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
         """
-        df_fc = query_df(sql_fc, {"clf2": clasificacion_2, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        df_fc = query_df(sql_fc, {"clf2": clf2_medicion, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
         fc_total = float(df_fc["forecast_total"].iloc[0] or 0)
         n_meses  = int(df_fc["n_periodos"].iloc[0] or 1)
 
@@ -227,8 +247,8 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
 
         uplift = (unidades_reales - fc_periodo) / fc_periodo
         uplifts.append(uplift)
-        log.info("Campaña '%s' (%s → %s): uplift medido %+.1f%%",
-                 row["campania"], fd, fh, uplift * 100)
+        log.info("Campaña '%s' (%s → %s) [%s]: uplift medido %+.1f%%",
+                 campania, fd, fh, clf2_medicion, uplift * 100)
 
     if not uplifts:
         return None
