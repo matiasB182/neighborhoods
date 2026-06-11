@@ -21,13 +21,34 @@ from core.db import (
 # Forecast baseline
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _score_fuzzy(query: str, candidato: str) -> float:
+    """
+    Mide qué tan bien el texto query coincide con el candidato.
+    Para cada palabra del query, busca la mejor coincidencia fuzzy entre
+    las palabras del candidato. Suma los scores — más alto = mejor match.
+    """
+    from difflib import SequenceMatcher
+    palabras_query     = [p.lower() for p in query.split() if len(p) > 1]
+    palabras_candidato = [p.lower() for p in candidato.split() if len(p) > 1]
+    if not palabras_query or not palabras_candidato:
+        return 0.0
+    total = 0.0
+    for pq in palabras_query:
+        mejor = max(
+            SequenceMatcher(None, pq, pc).ratio()
+            for pc in palabras_candidato
+        )
+        total += mejor
+    return total
+
+
 def resolver_clasificacion_2(texto: str) -> list[str]:
     """
     Busca la clasificacion_2 más parecida al texto dado.
     Estrategia:
-      1. Intenta match con TODAS las palabras (AND) → si hay 1 resultado, perfecto.
-      2. Si hay 0, relaja a OR y se queda con el candidato que tenga más palabras
-         del texto presentes y sea el nombre más corto (más específico).
+      1. Match AND exacto (substring) → si hay 1 resultado, perfecto.
+      2. Si hay 0 o >1, trae todos los candidatos vía OR y aplica
+         scoring fuzzy palabra a palabra con difflib para tolerar typos.
     Siempre retorna solo 1 elemento — el mejor match.
     """
     palabras = [p for p in texto.strip().split() if len(p) > 2]
@@ -46,33 +67,24 @@ def resolver_clasificacion_2(texto: str) -> list[str]:
         ORDER BY 1
     """
     df = query_df(sql_and, params)
-
     if len(df) == 1:
         return df["clasificacion_2"].tolist()
 
-    # Si AND da 0 o >1 resultados, usamos OR y elegimos el mejor
-    conditions_or = " OR ".join([f"LOWER(clasificacion_2_sheet) LIKE LOWER(%(p{i})s)"
-                                  for i in range(len(palabras))])
-    sql_or = f"""
+    # Traer todos los candidatos y rankear con fuzzy scoring
+    sql_all = f"""
         SELECT DISTINCT clasificacion_2_sheet AS clasificacion_2
         FROM {TABLE_FORECAST}
-        WHERE {conditions_or}
+        WHERE clasificacion_2_sheet IS NOT NULL
         ORDER BY 1
     """
-    df_or = query_df(sql_or, params)
-
-    if df_or.empty:
+    df_all = query_df(sql_all)
+    if df_all.empty:
         return []
 
-    # Scoring: contar cuántas palabras del texto están en cada candidato
-    def score(nombre: str) -> tuple:
-        nombre_lower = nombre.lower()
-        coincidencias = sum(1 for p in palabras if p.lower() in nombre_lower)
-        return (-coincidencias, len(nombre))  # más coincidencias primero, más corto primero
-
-    candidatos = df_or["clasificacion_2"].tolist()
-    mejor = sorted(candidatos, key=score)[0]
-    return [mejor]
+    candidatos = df_all["clasificacion_2"].tolist()
+    texto_lower = texto.lower()
+    scored = sorted(candidatos, key=lambda c: -_score_fuzzy(texto_lower, c))
+    return [scored[0]]
 
 
 def load_forecast(clasificacion_2: list | None, sucursal: str | None,
