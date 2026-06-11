@@ -109,14 +109,18 @@ def _inferir_tipo_promo(campania: str) -> str:
 
 def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     """
-    Retorna campañas históricas del mismo tipo_sheet y mismo tipo de promo.
-    Filtra por tipo inferido del nombre de campaña para mostrar solo referencias relevantes.
+    Retorna campañas históricas del mismo tipo de promo.
+    Estrategia:
+      1. Mismo tipo_sheet + mismo subtipo  → ideal
+      2. Cualquier tipo_sheet + mismo subtipo → fallback si no hay en la categoría
+    Nunca mezcla tipos de promo distintos.
     """
     from core.db import query_df, TABLE_DIM_ARTICULO, TABLE_PROMOCIONES
     from core.loader import load_tipo_sheet
 
     tipo_sheet = load_tipo_sheet(clasificacion_2)
 
+    # Paso 1: misma categoría
     if tipo_sheet:
         sql = f"""
             SELECT DISTINCT p.campania
@@ -126,34 +130,35 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
             WHERE dav.tipo_sheet = %(tipo)s
             ORDER BY 1
         """
-        params = {"tipo": tipo_sheet}
-        log.info("Buscando campañas históricas para tipo_sheet '%s'.", tipo_sheet)
-    else:
-        sql = f"""
-            SELECT DISTINCT p.campania
-            FROM {TABLE_PROMOCIONES} p
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet = %(clf2)s
-            ORDER BY 1
-        """
-        params = {"clf2": clasificacion_2}
+        try:
+            df = query_df(sql, {"tipo": tipo_sheet})
+            todas = df["campania"].tolist() if not df.empty else []
+            filtradas = [c for c in todas if _inferir_tipo_promo(c) == subtipo]
+            if filtradas:
+                log.info("Campañas similares (%s, %s): %d encontradas.", subtipo, tipo_sheet, len(filtradas))
+                return filtradas
+        except Exception:
+            pass
 
+    # Paso 2: buscar el mismo tipo de promo en toda la tabla
+    sql_all = f"""
+        SELECT DISTINCT campania
+        FROM {TABLE_PROMOCIONES}
+        ORDER BY 1
+    """
     try:
-        df = query_df(sql, params)
-        if df.empty:
+        df_all = query_df(sql_all)
+        if df_all.empty:
             return []
-        todas = df["campania"].tolist()
-        # Filtrar por tipo de promo inferido del nombre
+        todas = df_all["campania"].tolist()
         filtradas = [c for c in todas if _inferir_tipo_promo(c) == subtipo]
         if filtradas:
-            log.info("Campañas similares (%s, %s): %d encontradas.", subtipo, tipo_sheet, len(filtradas))
+            log.info("Campañas similares (%s, cualquier categoría): %d encontradas.", subtipo, len(filtradas))
             return filtradas
-        # Si no hay del mismo tipo, devolver todas (mejor que nada)
-        log.warning("Sin campañas de tipo '%s' para '%s'. Mostrando todas.", subtipo, clasificacion_2)
-        return todas
     except Exception:
-        return []
+        pass
+
+    return []
 
 
 def _uplift_con_fechas(clasificacion_2: str, tipo_sheet: str | None) -> tuple[float, str] | None:
