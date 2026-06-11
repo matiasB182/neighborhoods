@@ -193,7 +193,8 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
         elif subtipo == "producto_gratis":
             uplift    = float(df["promo_uplift"].iloc[0]) if "promo_uplift" in df.columns else 0
             conf      = str(df["promo_confianza"].iloc[0]) if "promo_confianza" in df.columns else "?"
-            campanias = str(df["promo_campanias"].iloc[0]) if "promo_campanias" in df.columns else ""
+            campanias_raw = str(df["promo_campanias"].iloc[0]) if "promo_campanias" in df.columns else ""
+            campanias = [c for c in campanias_raw.split("|||") if c]
             lines.append(f"El uplift estimado de regalar un producto es {uplift:+.1%}.")
             if conf == "histórico":
                 lines.append(f"Este número viene de promos similares registradas en el histórico.")
@@ -203,7 +204,7 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
             if campanias:
                 lines.append(f"")
                 lines.append(f"Campañas históricas encontradas para esta categoría:")
-                for c in campanias.split(", "):
+                for c in campanias:
                     lines.append(f"  · {c}")
 
         if canal:

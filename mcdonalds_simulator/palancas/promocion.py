@@ -201,7 +201,7 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
         df["promo_uplift"]     = uplift
         df["promo_confianza"]  = confianza
         df["promo_canal"]      = canal or "todos"
-        df["promo_campanias"]  = ", ".join(campanias) if campanias else ""
+        df["promo_campanias"]  = "|||".join(campanias) if campanias else ""
         desc = params.get("producto_gratis", "")
         log.info("Promo '%s' producto gratis (%s): uplift %.1f%% [%s]",
                  clasificacion_2, desc, uplift * 100, confianza)
