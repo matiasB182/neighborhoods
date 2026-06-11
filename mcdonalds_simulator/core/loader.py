@@ -8,6 +8,7 @@ Joins clave:
   dim_restaurantes.api_id_integer → forecast.sucursal / apertura_restaurantes.api_id
 """
 
+import logging
 import pandas as pd
 from core.db import (
     query_df,
@@ -15,6 +16,8 @@ from core.db import (
     TABLE_PRECIO_PRODUCTOS, TABLE_PROMOCIONES, TABLE_LANZAMIENTOS,
     TABLE_APERTURA_RESTAURANTES, TABLE_COMPETENCIA,
 )
+
+log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
