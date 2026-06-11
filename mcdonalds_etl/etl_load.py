@@ -168,29 +168,52 @@ def parse_precio_productos(ws) -> list:
 def parse_promociones(ws) -> list:
     """
     Hoja 'Códigos-Promo': col A=campaña (solo primera fila del grupo),
-    col B=codigo, col C=descripcion.
-    Retorna lista de (campania, codigo, descripcion).
+    col B=codigo, col C=descripcion, col D=fecha_desde (opcional), col E=fecha_hasta (opcional).
+    Retorna lista de (campania, codigo, descripcion, fecha_desde, fecha_hasta).
     """
     rows = list(ws.iter_rows(values_only=True))
     records = []
-    current_campania = None
+    current_campania  = None
+    current_fecha_desde = None
+    current_fecha_hasta = None
 
     for row in rows:
         if not any(x is not None for x in row):
             continue
         if row[0] is not None:
             current_campania = str(row[0]).strip()
-        codigo = row[1] if len(row) > 1 else None
+            # Fechas en col D y E, solo en la primera fila del grupo
+            raw_desde = row[3] if len(row) > 3 else None
+            raw_hasta = row[4] if len(row) > 4 else None
+            current_fecha_desde = _parse_fecha(raw_desde)
+            current_fecha_hasta = _parse_fecha(raw_hasta)
+        codigo      = row[1] if len(row) > 1 else None
         descripcion = row[2] if len(row) > 2 else None
         if current_campania and codigo is not None:
             records.append((
                 current_campania,
                 int(codigo),
                 str(descripcion).strip() if descripcion else "",
+                current_fecha_desde,
+                current_fecha_hasta,
             ))
 
-    log.info("promociones: %d registros", len(records))
+    log.info("promociones: %d registros (%d con fechas)",
+             len(records), sum(1 for r in records if r[3]))
     return records
+
+
+def _parse_fecha(valor) -> str | None:
+    """Convierte datetime, date o string YYYY-MM-DD a string ISO, o None."""
+    if valor is None:
+        return None
+    from datetime import datetime, date
+    if isinstance(valor, (datetime, date)):
+        return valor.strftime("%Y-%m-%d")
+    s = str(valor).strip()
+    if s and s != "None":
+        return s[:10]  # tomar solo YYYY-MM-DD si viene con hora
+    return None
 
 
 def parse_lanzamientos(ws) -> list:
@@ -347,7 +370,7 @@ def main():
         )
         truncate_and_insert(
             conn, "promociones",
-            ["campania", "codigo", "descripcion"],
+            ["campania", "codigo", "descripcion", "fecha_desde", "fecha_hasta"],
             promociones,
         )
         truncate_and_insert(

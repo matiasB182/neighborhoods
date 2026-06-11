@@ -362,6 +362,44 @@ def load_atributos_restaurantes() -> pd.DataFrame:
 # Competencia por sucursal
 # ─────────────────────────────────────────────────────────────────────────────
 
+def load_fechas_campania(clasificacion_2: str, tipo_sheet: str | None) -> pd.DataFrame:
+    """
+    Retorna campañas con fechas para productos del mismo tipo_sheet (o clasificacion_2).
+    Columnas: campania, fecha_desde, fecha_hasta
+    Solo devuelve filas donde fecha_desde y fecha_hasta no son null.
+    """
+    if tipo_sheet:
+        sql = f"""
+            SELECT DISTINCT p.campania,
+                   MIN(p.fecha_desde) AS fecha_desde,
+                   MAX(p.fecha_hasta) AS fecha_hasta
+            FROM {TABLE_PROMOCIONES} p
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE dav.tipo_sheet = %(tipo)s
+              AND p.fecha_desde IS NOT NULL
+              AND p.fecha_hasta IS NOT NULL
+            GROUP BY p.campania
+            ORDER BY p.campania
+        """
+        return query_df(sql, {"tipo": tipo_sheet})
+    else:
+        sql = f"""
+            SELECT DISTINCT p.campania,
+                   MIN(p.fecha_desde) AS fecha_desde,
+                   MAX(p.fecha_hasta) AS fecha_hasta
+            FROM {TABLE_PROMOCIONES} p
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE dav.clasificacion_2_sheet = %(clf2)s
+              AND p.fecha_desde IS NOT NULL
+              AND p.fecha_hasta IS NOT NULL
+            GROUP BY p.campania
+            ORDER BY p.campania
+        """
+        return query_df(sql, {"clf2": clasificacion_2})
+
+
 def load_competencia() -> pd.DataFrame:
     """
     Retorna competidores por sucursal.

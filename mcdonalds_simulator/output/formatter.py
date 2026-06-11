@@ -222,11 +222,12 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
             campanias_raw = str(df["promo_campanias"].iloc[0]) if "promo_campanias" in df.columns else ""
             campanias = [c for c in campanias_raw.split("|||") if c]
             lines.append(f"El uplift estimado de regalar un producto es {uplift:+.1%} durante la promo.")
-            if conf == "histórico":
-                lines.append(f"Este número viene de promos similares registradas en el histórico.")
+            if conf in ("alta", "media"):
+                lines.append(f"Este número se midió comparando las ventas de promos históricas similares")
+                lines.append(f"contra el mismo período del año anterior (baseline). Confianza: {conf}.")
             else:
-                lines.append(f"No hay fechas de promoción en la tabla, así que no se puede medir")
-                lines.append(f"el impacto real. Se usó un supuesto conservador de +10%.")
+                lines.append(f"No hay fechas de promoción históricas disponibles para medir el impacto real.")
+                lines.append(f"Se usó un supuesto conservador de +10%.")
             if campanias:
                 lines.append(f"")
                 lines.append(f"Campañas históricas encontradas para esta categoría:")

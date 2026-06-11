@@ -14,10 +14,13 @@ CREATE TABLE IF NOT EXISTS {schema}.precio_productos (
 ) DISTKEY (codigo) SORTKEY (anio, mes);
 
 -- Hoja "Códigos-Promo": campañas y sus productos
+-- fecha_desde/fecha_hasta: fechas exactas de la promo (col D y E del Excel, opcionales)
 CREATE TABLE IF NOT EXISTS {schema}.promociones (
     campania      VARCHAR(500)  NOT NULL,
     codigo        BIGINT        NOT NULL,
     descripcion   VARCHAR(200)  NOT NULL,
+    fecha_desde   DATE,
+    fecha_hasta   DATE,
     PRIMARY KEY (campania, codigo)
 ) DISTSTYLE ALL;
 
