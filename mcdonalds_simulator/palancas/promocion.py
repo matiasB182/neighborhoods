@@ -161,33 +161,96 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     return []
 
 
-def _uplift_con_fechas(clasificacion_2: str, tipo_sheet: str | None) -> tuple[float, str] | None:
+def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
+                       tipo_sheet: str | None) -> tuple[float, str] | None:
     """
-    Si hay promos históricas CON fechas: mide el uplift real como
-    (ventas_reales_promo - forecast_ese_período) / forecast_ese_período.
+    Dado un listado de campañas similares, busca las que tienen fechas en la DB
+    y calcula el uplift real: promedio de uplift diario medido en fact_ventas
+    durante cada período de campaña vs el forecast del mismo período.
     Retorna (uplift_promedio, confianza) o None si no hay fechas.
-    TODO: implementar cuando haya fechas en simulacion.promociones.
     """
     from core.loader import load_fechas_campania
-    fechas_df = load_fechas_campania(clasificacion_2, tipo_sheet)
+    from core.db import query_df, TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO, TABLE_FORECAST
+
+    fechas_df = load_fechas_campania(clasificacion_2, tipo_sheet, campanas=campanias)
     if fechas_df.empty:
         return None
-    # placeholder: cuando haya fechas calcular uplift vs forecast diario
-    return None
+
+    uplifts = []
+    for _, row in fechas_df.iterrows():
+        fd = str(row["fecha_desde"])[:10]
+        fh = str(row["fecha_hasta"])[:10] if row["fecha_hasta"] else fd
+        pm_desde = fd[:7]
+        pm_hasta = fh[:7]
+
+        # Ventas reales durante la campaña (todas las sucursales, misma clasificacion)
+        sql_ventas = f"""
+            SELECT SUM(fv.unidades) AS unidades_reales
+            FROM {TABLE_FACT_VENTAS} fv
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE dav.clasificacion_2_sheet = %(clf2)s
+              AND fv.fecha BETWEEN %(fd)s AND %(fh)s
+        """
+        df_v = query_df(sql_ventas, {"clf2": clasificacion_2, "fd": fd, "fh": fh})
+        unidades_reales = float(df_v["unidades_reales"].iloc[0] or 0)
+        if unidades_reales == 0:
+            continue
+
+        # Forecast diario promedio para el mismo período
+        sql_fc = f"""
+            SELECT SUM(unidades) AS forecast_total, COUNT(DISTINCT periodo) AS n_periodos
+            FROM {TABLE_FORECAST}
+            WHERE clasificacion_2 = %(clf2)s
+              AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
+        """
+        df_fc = query_df(sql_fc, {"clf2": clasificacion_2, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        fc_total = float(df_fc["forecast_total"].iloc[0] or 0)
+        n_meses  = int(df_fc["n_periodos"].iloc[0] or 1)
+
+        if fc_total == 0:
+            continue
+
+        # Forecast diario × días de campaña
+        import calendar as cal
+        from datetime import date
+        fd_d = date.fromisoformat(fd)
+        fh_d = date.fromisoformat(fh)
+        n_dias = (fh_d - fd_d).days + 1
+        dias_mes = cal.monthrange(fd_d.year, fd_d.month)[1]
+        fc_diario = fc_total / n_meses / dias_mes
+        fc_periodo = fc_diario * n_dias
+
+        if fc_periodo == 0:
+            continue
+
+        uplift = (unidades_reales - fc_periodo) / fc_periodo
+        uplifts.append(uplift)
+        log.info("Campaña '%s' (%s → %s): uplift medido %+.1f%%",
+                 row["campania"], fd, fh, uplift * 100)
+
+    if not uplifts:
+        return None
+
+    promedio  = sum(uplifts) / len(uplifts)
+    confianza = "alta" if len(uplifts) >= 3 else "media" if len(uplifts) >= 1 else "baja"
+    log.info("Uplift histórico promedio: %+.1f%% (%d campañas, confianza: %s)",
+             promedio * 100, len(uplifts), confianza)
+    return promedio, confianza
 
 
 def _uplift_2x1(clasificacion_2: str,
                 fecha_desde_sim: str, fecha_hasta_sim: str) -> tuple[float, str, list[str]]:
     """
-    1. Si hay campañas 2x1 históricas CON fechas → uplift medido.
-    2. Sin fechas → supuesto +40% sobre el forecast_promo.
+    1. Si hay campañas 2x1 históricas CON fechas → uplift medido vs forecast.
+    2. Sin fechas → supuesto +40%.
     Retorna (uplift, confianza, campañas).
     """
     from core.loader import load_tipo_sheet
     tipo_sheet = load_tipo_sheet(clasificacion_2)
     campanias  = _campanias_similares(clasificacion_2, "2x1")
 
-    resultado = _uplift_con_fechas(clasificacion_2, tipo_sheet)
+    resultado = _uplift_con_fechas(campanias, clasificacion_2, tipo_sheet)
     if resultado:
         uplift, confianza = resultado
         return uplift, confianza, campanias
@@ -209,7 +272,7 @@ def _uplift_producto_gratis(clasificacion_2: str,
     tipo_sheet = load_tipo_sheet(clasificacion_2)
     campanias  = _campanias_similares(clasificacion_2, "producto_gratis")
 
-    resultado = _uplift_con_fechas(clasificacion_2, tipo_sheet)
+    resultado = _uplift_con_fechas(campanias, clasificacion_2, tipo_sheet)
     if resultado:
         uplift, confianza = resultado
         return uplift, confianza, campanias

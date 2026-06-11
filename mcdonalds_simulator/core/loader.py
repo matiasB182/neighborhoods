@@ -384,13 +384,30 @@ def load_atributos_restaurantes() -> pd.DataFrame:
 # Competencia por sucursal
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_fechas_campania(clasificacion_2: str, tipo_sheet: str | None) -> pd.DataFrame:
+def load_fechas_campania(clasificacion_2: str, tipo_sheet: str | None,
+                         campanas: list | None = None) -> pd.DataFrame:
     """
-    Retorna campañas con fechas para productos del mismo tipo_sheet (o clasificacion_2).
+    Retorna campañas con fechas.
+    Si se pasa `campanas` (lista de nombres), filtra por esas campañas exactas.
+    Si no, filtra por tipo_sheet o clasificacion_2.
     Columnas: campania, fecha_desde, fecha_hasta
-    Solo devuelve filas donde fecha_desde y fecha_hasta no son null.
+    Solo devuelve filas donde fecha_desde no es null.
     """
-    if tipo_sheet:
+    if campanas:
+        placeholders = ", ".join([f"%(c{i})s" for i in range(len(campanas))])
+        params = {f"c{i}": c for i, c in enumerate(campanas)}
+        sql = f"""
+            SELECT DISTINCT campania,
+                   MIN(fecha_desde) AS fecha_desde,
+                   MAX(fecha_hasta) AS fecha_hasta
+            FROM {TABLE_PROMOCIONES}
+            WHERE campania IN ({placeholders})
+              AND fecha_desde IS NOT NULL
+            GROUP BY campania
+            ORDER BY campania
+        """
+        return query_df(sql, params)
+    elif tipo_sheet:
         sql = f"""
             SELECT DISTINCT p.campania,
                    MIN(p.fecha_desde) AS fecha_desde,
@@ -400,7 +417,6 @@ def load_fechas_campania(clasificacion_2: str, tipo_sheet: str | None) -> pd.Dat
                 ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
             WHERE dav.tipo_sheet = %(tipo)s
               AND p.fecha_desde IS NOT NULL
-              AND p.fecha_hasta IS NOT NULL
             GROUP BY p.campania
             ORDER BY p.campania
         """
@@ -415,7 +431,6 @@ def load_fechas_campania(clasificacion_2: str, tipo_sheet: str | None) -> pd.Dat
                 ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
             WHERE dav.clasificacion_2_sheet = %(clf2)s
               AND p.fecha_desde IS NOT NULL
-              AND p.fecha_hasta IS NOT NULL
             GROUP BY p.campania
             ORDER BY p.campania
         """
