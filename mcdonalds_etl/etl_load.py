@@ -37,6 +37,7 @@ REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
 SCHEMA               = os.environ.get("REDSHIFT_SCHEMA", "simulacion")
 EXCEL_PATH           = Path(os.environ.get("EXCEL_PATH", "./datos/DATOS.xlsx"))
 EXCEL_COMPETENCIA    = Path(os.environ.get("EXCEL_COMPETENCIA", "./datos/Competencia_por_local.xlsx"))
+CSV_CALENDARIO       = Path(os.environ.get("CSV_CALENDARIO", "./datos/Calendario_de_acciones_historico_MKTParaguay.csv"))
 
 DDL_PATH = Path(__file__).parent / "create_tables.sql"
 
@@ -216,6 +217,178 @@ def _parse_fecha(valor) -> str | None:
     return None
 
 
+def parse_calendario_csv(path: Path) -> list:
+    """
+    Parsea el CSV del calendario de acciones de marketing.
+
+    Estructura del CSV:
+      - Separador: punto y coma (;)
+      - Filas de encabezado: fila con años (2026, 2025, 2024...) + fila con
+        "Inicio;Fin;Código;Descripcion" repetido por año.
+      - Cada año ocupa 4 columnas: Inicio | Fin | Código | Descripcion.
+        2026 → cols 2-5  |  2025 → cols 6-9  |  2024 → cols 10-13  ...
+      - El mes se detecta por el valor en col 1 (ENERO, FEBRERO, etc.) y se
+        hereda hasta que aparezca otro mes.
+      - Inicio/Fin son días del mes. Pueden ser: número simple, "6, 13, 20 y 27",
+        "6 al 16", "22-ene", "09-abr-26", "Vigente", vacío.
+      - Código puede contener: múltiples números separados por guiones, espacios
+        o saltos de línea; puntos como separador de miles (9.158 → 9158).
+
+    Solo incluye filas con códigos numéricos válidos (entre 100 y 999999).
+    Retorna lista de (campania, codigo, descripcion, fecha_desde, fecha_hasta).
+    """
+    import csv as csv_mod
+    import re
+    import calendar as cal
+    from datetime import date as dt_date
+
+    MESES_ES = {
+        "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4,
+        "MAYO": 5, "JUNIO": 6, "JULIO": 7, "AGOSTO": 8,
+        "SEPTIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12,
+    }
+    MES_ABREV = {
+        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+        "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    }
+    TARGET_YEARS = {2024, 2025, 2026}
+
+    def _extraer_codigos(texto):
+        tokens = re.findall(r'\b\d[\d.]*\b', texto.replace('\n', ' ').replace('\r', ''))
+        codigos = []
+        for t in tokens:
+            try:
+                c = int(t.replace('.', ''))
+                if 100 <= c <= 999999:
+                    codigos.append(c)
+            except ValueError:
+                pass
+        return list(dict.fromkeys(codigos))
+
+    def _parsear_fecha(texto, year, mes, tipo):
+        """tipo: 'inicio' → día mínimo | 'fin' → día máximo."""
+        if not texto:
+            return None
+        t = texto.strip().lower()
+        if t in ('vigente', 'se queda', 'hasta agotar stock', 'todo el mes', ''):
+            return None
+
+        # "22-ene" o "09-abr-26"
+        m = re.match(r'^(\d{1,2})[- ]([a-záéíóú]{3})(?:[- ](\d{2,4}))?', t)
+        if m:
+            dia  = int(m.group(1))
+            mes_ = MES_ABREV.get(m.group(2), mes)
+            yr_  = int(m.group(3)) if m.group(3) else year
+            if yr_ < 100:
+                yr_ += 2000
+            try:
+                return dt_date(yr_, mes_, min(dia, cal.monthrange(yr_, mes_)[1]))
+            except ValueError:
+                return None
+
+        # "X al Y"
+        m = re.match(r'^(\d+)\s*al\s*(\d+)', t)
+        if m:
+            d1, d2 = int(m.group(1)), int(m.group(2))
+            dia = d1 if tipo == "inicio" else d2
+            try:
+                return dt_date(year, mes, min(dia, cal.monthrange(year, mes)[1]))
+            except ValueError:
+                return None
+
+        # Uno o varios días: "6, 13, 20 y 27" | "1 y 2" | "15"
+        nums = [int(x) for x in re.findall(r'\d+', t) if 1 <= int(x) <= 31]
+        if nums:
+            dia = min(nums) if tipo == "inicio" else max(nums)
+            try:
+                return dt_date(year, mes, min(dia, cal.monthrange(year, mes)[1]))
+            except ValueError:
+                return None
+
+        return None
+
+    if not path.exists():
+        log.warning("CSV calendario no encontrado: %s — se omite.", path)
+        return []
+
+    with open(path, encoding='latin-1', errors='replace') as f:
+        reader = csv_mod.reader(f, delimiter=';')
+        all_rows = list(reader)
+
+    # Detectar columna base de cada año objetivo (primeras 10 filas)
+    year_col_map = {}
+    for row in all_rows[:10]:
+        for col_idx, val in enumerate(row):
+            v = val.strip()
+            if re.match(r'^20\d\d$', v):
+                yr = int(v)
+                if yr in TARGET_YEARS:
+                    year_col_map[yr] = col_idx
+        if year_col_map:
+            break
+
+    if not year_col_map:
+        log.warning("No se detectaron columnas de año en el CSV. Se omite.")
+        return []
+
+    log.info("Calendario CSV — años detectados: %s", year_col_map)
+
+    max_col   = max(year_col_map.values()) + 4
+    records   = []
+    cur_month = None
+
+    for row in all_rows:
+        while len(row) < max_col:
+            row.append('')
+
+        col1 = row[1].strip().upper() if len(row) > 1 else ''
+        if col1 in MESES_ES:
+            cur_month = MESES_ES[col1]
+
+        if cur_month is None:
+            continue
+
+        for year, base in year_col_map.items():
+            inicio_raw = row[base].strip()
+            fin_raw    = row[base + 1].strip()
+            codigo_raw = row[base + 2].strip()
+            desc_raw   = row[base + 3].strip()
+
+            if not codigo_raw or not desc_raw:
+                continue
+
+            codigos = _extraer_codigos(codigo_raw)
+            if not codigos:
+                continue
+
+            fd = _parsear_fecha(inicio_raw, year, cur_month, "inicio")
+            fh = _parsear_fecha(fin_raw,    year, cur_month, "fin")
+
+            if fd is None:
+                continue
+            if fh and fh < fd:
+                fh = None  # fecha inválida, descartar
+
+            fd_str = fd.strftime('%Y-%m-%d')
+            fh_str = fh.strftime('%Y-%m-%d') if fh else None
+            desc   = desc_raw[:500]
+
+            for codigo in codigos:
+                records.append((desc, codigo, '', fd_str, fh_str))
+
+    # Deduplicar por (campania, codigo, fecha_desde)
+    seen, unique = set(), []
+    for r in records:
+        key = (r[0], r[1], r[3])
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+
+    log.info("Calendario CSV: %d registros, %d campañas únicas",
+             len(unique), len({r[0] for r in unique}))
+    return unique
+
+
 def parse_lanzamientos(ws) -> list:
     """
     Hoja 'Códigos Lanzamientos': misma estructura que Códigos-Promo.
@@ -352,10 +525,15 @@ def main():
     wb = openpyxl.load_workbook(str(EXCEL_PATH), read_only=True, data_only=True)
 
     precios      = parse_precio_productos(wb["Precios"])
-    promociones  = parse_promociones(wb["Códigos-Promo"])
+    promo_excel  = parse_promociones(wb["Códigos-Promo"])
     lanzamientos = parse_lanzamientos(wb["Códigos Lanzamientos"])
     aperturas    = parse_apertura_restaurantes(wb["Aperturas"])
     wb.close()
+
+    promo_csv   = parse_calendario_csv(CSV_CALENDARIO)
+    promociones = promo_excel + promo_csv
+    log.info("Promociones total: %d (Excel: %d | Calendario CSV: %d)",
+             len(promociones), len(promo_excel), len(promo_csv))
 
     competencia = parse_competencia(EXCEL_COMPETENCIA)
 
