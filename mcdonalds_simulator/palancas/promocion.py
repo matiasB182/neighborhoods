@@ -138,14 +138,33 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
         return []
 
 
-def _uplift_desde_fechas(clasificacion_2: str, tipo_sheet: str | None,
-                          fecha_desde_sim: str, fecha_hasta_sim: str) -> tuple[float, str] | None:
-    """
-    Mide el uplift real comparando ventas en el período de cada promo histórica
-    vs el mismo período del año anterior (baseline).
-    Retorna (uplift_promedio, confianza) o None si no hay datos suficientes.
-    """
+def _ventas_periodo(clasificacion_2: str, fecha_desde: str, fecha_hasta: str) -> float:
+    """Retorna las unidades vendidas de una clasificacion_2 en un rango de fechas."""
     from core.db import query_df, TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO
+    sql = f"""
+        SELECT SUM(fv.cantidad) AS unidades
+        FROM {TABLE_FACT_VENTAS} fv
+        JOIN {TABLE_DIM_ARTICULO} dav
+            ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+        WHERE dav.clasificacion_2_sheet = %(clf2)s
+          AND fv.fecha BETWEEN %(fd)s AND %(fh)s
+    """
+    try:
+        df = query_df(sql, {"clf2": clasificacion_2, "fd": fecha_desde, "fh": fecha_hasta})
+        if not df.empty and df.iloc[0]["unidades"] is not None:
+            return float(df.iloc[0]["unidades"])
+    except Exception as e:
+        log.warning("Error consultando ventas %s – %s: %s", fecha_desde, fecha_hasta, e)
+    return 0.0
+
+
+def _uplift_con_fechas(clasificacion_2: str, tipo_sheet: str | None) -> tuple[float, str] | None:
+    """
+    Si hay promos históricas CON fechas: mide el uplift real comparando
+    ventas durante la promo vs el mismo período del año anterior.
+    Retorna (uplift_promedio, confianza) o None si no hay fechas.
+    """
+    from datetime import date
     from core.loader import load_fechas_campania
 
     fechas_df = load_fechas_campania(clasificacion_2, tipo_sheet)
@@ -156,64 +175,64 @@ def _uplift_desde_fechas(clasificacion_2: str, tipo_sheet: str | None,
     for _, row in fechas_df.iterrows():
         fd = str(row["fecha_desde"])
         fh = str(row["fecha_hasta"])
-
-        # Año anterior: misma franja
-        from datetime import date, timedelta
         d_desde = date.fromisoformat(fd)
         d_hasta = date.fromisoformat(fh)
         baseline_desde = d_desde.replace(year=d_desde.year - 1).isoformat()
         baseline_hasta = d_hasta.replace(year=d_hasta.year - 1).isoformat()
 
-        sql = f"""
-            SELECT
-                SUM(CASE WHEN fv.fecha BETWEEN %(fd)s AND %(fh)s THEN fv.cantidad ELSE 0 END)
-                    AS unidades_promo,
-                SUM(CASE WHEN fv.fecha BETWEEN %(bd)s AND %(bh)s THEN fv.cantidad ELSE 0 END)
-                    AS unidades_base
-            FROM {TABLE_FACT_VENTAS} fv
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet = %(clf2)s
-        """
-        try:
-            df = query_df(sql, {"fd": fd, "fh": fh, "bd": baseline_desde, "bh": baseline_hasta,
-                                "clf2": clasificacion_2})
-            if not df.empty:
-                u_promo = float(df.iloc[0]["unidades_promo"] or 0)
-                u_base  = float(df.iloc[0]["unidades_base"] or 0)
-                if u_base > 0:
-                    uplifts.append((u_promo - u_base) / u_base)
-        except Exception as e:
-            log.warning("Error midiendo uplift para '%s': %s", row["campania"], e)
+        u_promo = _ventas_periodo(clasificacion_2, fd, fh)
+        u_base  = _ventas_periodo(clasificacion_2, baseline_desde, baseline_hasta)
+        if u_base > 0:
+            uplifts.append((u_promo - u_base) / u_base)
+            log.info("Promo '%s': ventas %.0f vs baseline %.0f → uplift %.1f%%",
+                     row["campania"], u_promo, u_base, (u_promo - u_base) / u_base * 100)
 
     if not uplifts:
         return None
 
     uplift_avg = sum(uplifts) / len(uplifts)
-    confianza  = "alta" if len(uplifts) >= 3 else "media" if len(uplifts) >= 1 else "baja"
+    confianza  = "alta" if len(uplifts) >= 3 else "media"
     log.info("Uplift real de %d promos históricas: %.1f%% [%s]", len(uplifts), uplift_avg * 100, confianza)
     return max(uplift_avg, 0.0), confianza
 
 
 def _uplift_producto_gratis(clasificacion_2: str,
-                             fecha_desde_sim: str, fecha_hasta_sim: str) -> tuple[float, str, list[str]]:
+                             fecha_desde_sim: str, fecha_hasta_sim: str) -> tuple[float, str, list[str], float]:
     """
-    1. Si hay promos históricas con fechas: mide el uplift real vs mismo período año anterior.
-    2. Si no hay fechas: usa default +10%.
-    Retorna (uplift, confianza, campañas_encontradas).
+    Lógica:
+      1. Si hay promos históricas CON fechas → mide uplift real (promo vs año anterior).
+      2. Si NO hay fechas → usa ventas del mismo período del año anterior como baseline
+         y aplica supuesto +10% sobre ese número.
+    Retorna (uplift, confianza, campañas, ventas_baseline).
     """
+    from datetime import date
     from core.loader import load_tipo_sheet
+
     tipo_sheet = load_tipo_sheet(clasificacion_2)
     campanias  = _campanias_similares(clasificacion_2, "producto_gratis")
 
-    resultado = _uplift_desde_fechas(clasificacion_2, tipo_sheet, fecha_desde_sim, fecha_hasta_sim)
+    # Caso 1: tenemos fechas históricas → uplift medido
+    resultado = _uplift_con_fechas(clasificacion_2, tipo_sheet)
     if resultado:
         uplift, confianza = resultado
-        log.info("Uplift histórico para '%s': %.1f%% [%s]", clasificacion_2, uplift * 100, confianza)
-        return uplift, confianza, campanias
+        # baseline = ventas del período simulado año anterior
+        d_desde = date.fromisoformat(fecha_desde_sim)
+        d_hasta = date.fromisoformat(fecha_hasta_sim)
+        baseline_desde = d_desde.replace(year=d_desde.year - 1).isoformat()
+        baseline_hasta = d_hasta.replace(year=d_hasta.year - 1).isoformat()
+        ventas_baseline = _ventas_periodo(clasificacion_2, baseline_desde, baseline_hasta)
+        return uplift, confianza, campanias, ventas_baseline
 
-    log.warning("Sin fechas de promo históricas — usando default +%.0f%%.", UPLIFT_PRODUCTO_GRATIS_DEFAULT * 100)
-    return UPLIFT_PRODUCTO_GRATIS_DEFAULT, "supuesto", campanias
+    # Caso 2: sin fechas → baseline = ventas del mismo período del año anterior
+    d_desde = date.fromisoformat(fecha_desde_sim)
+    d_hasta = date.fromisoformat(fecha_hasta_sim)
+    baseline_desde = d_desde.replace(year=d_desde.year - 1).isoformat()
+    baseline_hasta = d_hasta.replace(year=d_hasta.year - 1).isoformat()
+    ventas_baseline = _ventas_periodo(clasificacion_2, baseline_desde, baseline_hasta)
+
+    log.warning("Sin fechas de promo históricas — baseline del %s al %s (año anterior): %.0f unidades. Uplift supuesto +%.0f%%.",
+                baseline_desde, baseline_hasta, ventas_baseline, UPLIFT_PRODUCTO_GRATIS_DEFAULT * 100)
+    return UPLIFT_PRODUCTO_GRATIS_DEFAULT, "supuesto", campanias, ventas_baseline
 
 
 def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: str) -> pd.DataFrame:
