@@ -185,7 +185,7 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
 
         # Ventas reales durante la campaña (todas las sucursales, misma clasificacion)
         sql_ventas = f"""
-            SELECT SUM(fv.unidades) AS unidades_reales
+            SELECT SUM(fv.cantidad) AS unidades_reales
             FROM {TABLE_FACT_VENTAS} fv
             JOIN {TABLE_DIM_ARTICULO} dav
                 ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
@@ -199,9 +199,10 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
 
         # Forecast diario promedio para el mismo período
         sql_fc = f"""
-            SELECT SUM(unidades) AS forecast_total, COUNT(DISTINCT periodo) AS n_periodos
+            SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
+                   COUNT(DISTINCT periodo) AS n_periodos
             FROM {TABLE_FORECAST}
-            WHERE clasificacion_2 = %(clf2)s
+            WHERE clasificacion_2_sheet = %(clf2)s
               AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
         """
         df_fc = query_df(sql_fc, {"clf2": clasificacion_2, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
