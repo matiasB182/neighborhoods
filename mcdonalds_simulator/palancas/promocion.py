@@ -161,20 +161,20 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     return []
 
 
-def _clf2_de_campania(campania: str) -> str | None:
-    """Devuelve la clasificacion_2_sheet de los productos de una campaña."""
+def _tipo_sheet_de_campania(campania: str) -> str | None:
+    """Devuelve el tipo_sheet de los productos de una campaña."""
     from core.db import query_df, TABLE_PROMOCIONES, TABLE_DIM_ARTICULO
     sql = f"""
-        SELECT DISTINCT dav.clasificacion_2_sheet
+        SELECT DISTINCT dav.tipo_sheet
         FROM {TABLE_PROMOCIONES} p
         JOIN {TABLE_DIM_ARTICULO} dav
             ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
         WHERE p.campania = %(camp)s
-          AND dav.clasificacion_2_sheet IS NOT NULL
+          AND dav.tipo_sheet IS NOT NULL
         LIMIT 1
     """
     df = query_df(sql, {"camp": campania})
-    return df["clasificacion_2_sheet"].iloc[0] if not df.empty else None
+    return df["tipo_sheet"].iloc[0] if not df.empty else None
 
 
 def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
@@ -200,32 +200,37 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         pm_hasta = fh[:7]
         campania = row["campania"]
 
-        # Usar la clasificacion_2 real de la campaña (puede ser CDL, McFlurry, etc.)
-        clf2_medicion = _clf2_de_campania(campania) or clasificacion_2
+        # Medir a nivel tipo_sheet para capturar SKUs especiales de promo
+        # (ej: "Promo 2x1 Cuarto de Libra" + "Combo Cuarto de Libra" = toda la familia)
+        tipo_medicion = _tipo_sheet_de_campania(campania)
+        if not tipo_medicion:
+            continue
 
-        # Ventas reales durante la campaña de la categoría promovida
+        # Ventas reales durante la campaña — toda la familia de productos (tipo_sheet)
         sql_ventas = f"""
             SELECT SUM(fv.cantidad) AS unidades_reales
             FROM {TABLE_FACT_VENTAS} fv
             JOIN {TABLE_DIM_ARTICULO} dav
                 ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet = %(clf2)s
+            WHERE dav.tipo_sheet = %(tipo)s
               AND fv.fecha BETWEEN %(fd)s AND %(fh)s
         """
-        df_v = query_df(sql_ventas, {"clf2": clf2_medicion, "fd": fd, "fh": fh})
+        df_v = query_df(sql_ventas, {"tipo": tipo_medicion, "fd": fd, "fh": fh})
         unidades_reales = float(df_v["unidades_reales"].iloc[0] or 0)
         if unidades_reales == 0:
             continue
 
-        # Forecast diario promedio para la misma categoría y período
+        # Forecast diario — toda la familia de productos (tipo_sheet via dim_articulo)
         sql_fc = f"""
-            SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
-                   COUNT(DISTINCT periodo) AS n_periodos
-            FROM {TABLE_FORECAST}
-            WHERE clasificacion_2_sheet = %(clf2)s
-              AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
+            SELECT SUM(COALESCE(f.forecast, f.unidades)) AS forecast_total,
+                   COUNT(DISTINCT f.periodo) AS n_periodos
+            FROM {TABLE_FORECAST} f
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON f.clasificacion_2_sheet = dav.clasificacion_2_sheet
+            WHERE dav.tipo_sheet = %(tipo)s
+              AND f.periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
         """
-        df_fc = query_df(sql_fc, {"clf2": clf2_medicion, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        df_fc = query_df(sql_fc, {"tipo": tipo_medicion, "pm_desde": pm_desde, "pm_hasta": pm_hasta})
         fc_total = float(df_fc["forecast_total"].iloc[0] or 0)
         n_meses  = int(df_fc["n_periodos"].iloc[0] or 1)
 
@@ -247,8 +252,8 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
 
         uplift = (unidades_reales - fc_periodo) / fc_periodo
         uplifts.append(uplift)
-        log.info("Campaña '%s' (%s → %s) [%s]: uplift medido %+.1f%%",
-                 campania, fd, fh, clf2_medicion, uplift * 100)
+        log.info("Campaña '%s' (%s → %s) [tipo_sheet: %s]: uplift medido %+.1f%%",
+                 campania, fd, fh, tipo_medicion, uplift * 100)
 
     if not uplifts:
         return None
