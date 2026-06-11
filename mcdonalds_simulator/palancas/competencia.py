@@ -17,7 +17,7 @@ Parámetro zona (opcional):
 
 import logging
 import pandas as pd
-from core.loader import load_competencia, load_ventas_historicas, load_zonas_restaurantes
+from core.loader import load_competencia, load_ventas_historicas, load_zonas_restaurantes, load_tipo_sheet
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +118,7 @@ def aplicar(df: pd.DataFrame, params: dict, **kwargs) -> pd.DataFrame:
 
     clf2_lista = df["clasificacion_2"].unique().tolist()
     clf2 = clf2_lista[0] if len(clf2_lista) == 1 else None
+    tipo_sheet = load_tipo_sheet(clf2) if clf2 else None
 
     efecto, confianza, desc_zona = _calcular_efecto_historico(
         sucursal_id, distancia_km, clf2, zona)
@@ -129,7 +130,8 @@ def aplicar(df: pd.DataFrame, params: dict, **kwargs) -> pd.DataFrame:
     df.loc[mascara,  "unidades_simuladas"] = df.loc[mascara,  col_base] * (1 + efecto)
     df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, col_base]
 
-    df["competencia_efecto"]    = efecto
-    df["competencia_confianza"] = confianza
-    df["competencia_zona"]      = desc_zona
+    df["competencia_efecto"]      = efecto
+    df["competencia_confianza"]   = confianza
+    df["competencia_zona"]        = desc_zona
+    df["competencia_tipo_sheet"]  = tipo_sheet or ""
     return df

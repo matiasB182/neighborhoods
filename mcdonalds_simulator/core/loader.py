@@ -270,6 +270,51 @@ def load_lanzamientos_por_clasificacion(clasificacion_2: str) -> pd.DataFrame:
     return query_df(sql, {"clf2": clasificacion_2})
 
 
+def load_tipo_sheet(clasificacion_2: str) -> str | None:
+    """
+    Retorna el tipo_sheet dominante para una clasificacion_2 (el que más unidades vendió).
+    Maneja el caso N:1 donde una clasificacion_2 aparece en varios tipos.
+    """
+    sql = f"""
+        SELECT dav.tipo_sheet, SUM(fv.cantidad) AS unidades
+        FROM {TABLE_FACT_VENTAS} fv
+        JOIN {TABLE_DIM_ARTICULO} dav
+            ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+        WHERE dav.clasificacion_2_sheet = %(clf2)s
+          AND dav.tipo_sheet IS NOT NULL
+        GROUP BY dav.tipo_sheet
+        ORDER BY unidades DESC
+        LIMIT 1
+    """
+    df = query_df(sql, {"clf2": clasificacion_2})
+    if df.empty:
+        return None
+    return str(df.iloc[0]["tipo_sheet"])
+
+
+def load_tipo_sheet_por_lanzamiento(lanzamiento: str) -> str | None:
+    """
+    Retorna el tipo_sheet dominante de los productos de un lanzamiento histórico.
+    """
+    sql = f"""
+        SELECT dav.tipo_sheet, SUM(fv.cantidad) AS unidades
+        FROM {TABLE_FACT_VENTAS} fv
+        JOIN {TABLE_LANZAMIENTOS} l
+            ON CAST(fv.producto AS VARCHAR) = CAST(l.codigo AS VARCHAR)
+        JOIN {TABLE_DIM_ARTICULO} dav
+            ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+        WHERE l.lanzamiento = %(lanz)s
+          AND dav.tipo_sheet IS NOT NULL
+        GROUP BY dav.tipo_sheet
+        ORDER BY unidades DESC
+        LIMIT 1
+    """
+    df = query_df(sql, {"lanz": lanzamiento})
+    if df.empty:
+        return None
+    return str(df.iloc[0]["tipo_sheet"])
+
+
 def load_zonas_restaurantes() -> pd.DataFrame:
     """
     Retorna los atributos de zona de cada sucursal desde dim_restaurantes.

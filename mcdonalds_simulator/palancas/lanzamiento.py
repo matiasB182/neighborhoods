@@ -14,7 +14,7 @@ Lógica:
 
 import logging
 import pandas as pd
-from core.loader import load_lanzamientos_por_clasificacion, resolver_clasificacion_2
+from core.loader import load_lanzamientos_por_clasificacion, load_tipo_sheet, load_tipo_sheet_por_lanzamiento, resolver_clasificacion_2
 from core.db import (
     query_df,
     TABLE_FACT_VENTAS, TABLE_DIM_ARTICULO, TABLE_LANZAMIENTOS,
@@ -74,15 +74,30 @@ def _patron_desde_proxy(proxy: str, clasificacion_2: str) -> dict | None:
     return None
 
 
-def _patron_promedio_general() -> tuple[dict, str]:
+def _patron_promedio_general(tipo_sheet: str | None = None) -> tuple[dict, str]:
+    """
+    Promedia el patrón de todos los lanzamientos históricos.
+    Si se pasa tipo_sheet, restringe a lanzamientos del mismo tipo.
+    """
+    tipo_filter = "AND dav.tipo_sheet = %(tipo)s" if tipo_sheet else ""
+    params = {"tipo": tipo_sheet} if tipo_sheet else {}
+
     sql = f"""
-        WITH primer_mes AS (
+        WITH lanzamientos_tipo AS (
+            SELECT DISTINCT l.lanzamiento
+            FROM {TABLE_LANZAMIENTOS} l
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(l.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE 1=1 {tipo_filter}
+        ),
+        primer_mes AS (
             SELECT
                 l.lanzamiento,
                 MIN(TO_CHAR(fv.fecha, 'YYYY-MM')) AS periodo_lanzamiento
             FROM {TABLE_FACT_VENTAS} fv
             JOIN {TABLE_LANZAMIENTOS} l
                 ON CAST(fv.producto AS VARCHAR) = CAST(l.codigo AS VARCHAR)
+            WHERE l.lanzamiento IN (SELECT lanzamiento FROM lanzamientos_tipo)
             GROUP BY l.lanzamiento
         ),
         ventas_por_lanz AS (
@@ -106,7 +121,7 @@ def _patron_promedio_general() -> tuple[dict, str]:
             )                                              AS mes_relativo,
             AVG((vl.unidades - bl.base) / NULLIF(bl.base, 0)) AS uplift_pct
         FROM ventas_por_lanz vl
-        JOIN primer_mes pm       ON vl.lanzamiento = pm.lanzamiento
+        JOIN primer_mes pm        ON vl.lanzamiento = pm.lanzamiento
         JOIN baseline_por_lanz bl ON vl.lanzamiento = bl.lanzamiento
         WHERE DATEDIFF('month',
                 TO_DATE(pm.periodo_lanzamiento, 'YYYY-MM'),
@@ -116,10 +131,11 @@ def _patron_promedio_general() -> tuple[dict, str]:
         ORDER BY 1
     """
     try:
-        df = query_df(sql)
+        df = query_df(sql, params)
         if not df.empty:
             patron = df.set_index("mes_relativo")["uplift_pct"].to_dict()
-            log.warning("Usando patrón promedio general de lanzamientos. Confianza: baja.")
+            scope = f"tipo '{tipo_sheet}'" if tipo_sheet else "general"
+            log.warning("Usando patrón promedio de lanzamientos (%s). Confianza: baja.", scope)
             return patron, "baja"
     except Exception as e:
         log.warning("Error calculando patrón general: %s", e)
@@ -127,11 +143,16 @@ def _patron_promedio_general() -> tuple[dict, str]:
     return PATRON_DEFAULT, "supuesto"
 
 
-def _patron_promedio(clasificacion_2: str, proxy: str | None) -> tuple[dict, str]:
+def _patron_promedio(clasificacion_2: str, proxy: str | None) -> tuple[dict, str, str | None]:
+    """Retorna (patron, confianza, tipo_sheet_usado)."""
+    tipo_sheet = load_tipo_sheet(clasificacion_2)
+
     if proxy:
         patron = _patron_desde_proxy(proxy, clasificacion_2)
         if patron:
-            return patron, "alta"
+            tipo_proxy = load_tipo_sheet_por_lanzamiento(proxy)
+            log.info("Proxy '%s' (tipo: %s) usado como referencia.", proxy, tipo_proxy or "?")
+            return patron, "alta", tipo_sheet
 
     df = load_lanzamientos_por_clasificacion(clasificacion_2)
     if not df.empty:
@@ -139,9 +160,16 @@ def _patron_promedio(clasificacion_2: str, proxy: str | None) -> tuple[dict, str
         n = df["lanzamiento"].nunique()
         confianza = "alta" if n >= 3 else "media"
         log.info("Usando %d lanzamiento(s) histórico(s) de '%s'.", n, clasificacion_2)
-        return patron, confianza
+        return patron, confianza, tipo_sheet
 
-    return _patron_promedio_general()
+    # Fallback: patrón general del mismo tipo_sheet
+    if tipo_sheet:
+        patron, confianza = _patron_promedio_general(tipo_sheet)
+        if patron != PATRON_DEFAULT:
+            return patron, confianza, tipo_sheet
+
+    patron, confianza = _patron_promedio_general()
+    return patron, confianza, tipo_sheet
 
 
 def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, **kwargs) -> pd.DataFrame:
@@ -160,7 +188,7 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, **kwargs) -> pd.
     log.info("Lanzamiento '%s' → clasificacion_2 resuelta: '%s'", clf2_texto, clasificacion_2)
 
     proxy = params.get("proxy_lanzamiento")
-    patron, confianza = _patron_promedio(clasificacion_2, proxy)
+    patron, confianza, tipo_sheet = _patron_promedio(clasificacion_2, proxy)
 
     df = df.copy()
     col_base = "unidades_simuladas" if "unidades_simuladas" in df.columns else "forecast"
@@ -174,9 +202,10 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, **kwargs) -> pd.
         return (y2 - y1) * 12 + (m2 - m1)
 
     uplift_map = {p: patron.get(_mes_relativo(p), 0.0) for p in periodos_sorted}
-    df["lanzamiento_uplift"] = df["periodo"].map(uplift_map).fillna(0.0)
-    df["unidades_simuladas"] = df[col_base] * (1 + df["lanzamiento_uplift"])
+    df["lanzamiento_uplift"]    = df["periodo"].map(uplift_map).fillna(0.0)
+    df["unidades_simuladas"]    = df[col_base] * (1 + df["lanzamiento_uplift"])
     df["lanzamiento_confianza"] = confianza
+    df["lanzamiento_tipo"]      = tipo_sheet or ""
 
     ref = params.get("nombre_referencia", clasificacion_2)
     log.info("Lanzamiento '%s': uplift mes 0 = %.1f%% [%s]",

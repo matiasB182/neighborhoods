@@ -18,7 +18,7 @@ Parámetro zona (opcional):
 
 import logging
 import pandas as pd
-from core.loader import load_atributos_restaurantes, load_ventas_historicas, load_zonas_restaurantes
+from core.loader import load_atributos_restaurantes, load_ventas_historicas, load_zonas_restaurantes, load_tipo_sheet
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +115,7 @@ def aplicar(df: pd.DataFrame, params: dict, **kwargs) -> pd.DataFrame:
 
     clf2_lista = df["clasificacion_2"].unique().tolist()
     clf2 = clf2_lista[0] if len(clf2_lista) == 1 else None
+    tipo_sheet = load_tipo_sheet(clf2) if clf2 else None
 
     efecto, confianza, desc_zona = _calcular_efecto_canal(canal, clf2, sucursal, zona)
 
@@ -128,8 +129,9 @@ def aplicar(df: pd.DataFrame, params: dict, **kwargs) -> pd.DataFrame:
     df.loc[mascara,  "unidades_simuladas"] = df.loc[mascara,  col_base] * (1 + efecto)
     df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, col_base]
 
-    df["estructural_canal"]     = canal
-    df["estructural_efecto"]    = efecto
-    df["estructural_confianza"] = confianza
-    df["estructural_zona"]      = desc_zona
+    df["estructural_canal"]      = canal
+    df["estructural_efecto"]     = efecto
+    df["estructural_confianza"]  = confianza
+    df["estructural_zona"]       = desc_zona
+    df["estructural_tipo_sheet"] = tipo_sheet or ""
     return df

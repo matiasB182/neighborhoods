@@ -59,18 +59,40 @@ def _cambio_pct_para_precio_fijo(clasificacion_2: str, precio_fijo: float,
 
 
 def _campanias_similares(clasificacion_2: str) -> list[str]:
-    """Retorna nombres de campañas históricas que incluyen productos de esa clasificacion_2."""
-    from core.db import query_df, TABLE_DIM_ARTICULO, TABLE_PROMOCIONES
-    sql = f"""
-        SELECT DISTINCT p.campania
-        FROM {TABLE_PROMOCIONES} p
-        JOIN {TABLE_DIM_ARTICULO} dav
-            ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-        WHERE dav.clasificacion_2_sheet = %(clf2)s
-        ORDER BY 1
     """
+    Retorna campañas históricas del mismo tipo_sheet dominante que clasificacion_2.
+    Si no hay tipo_sheet, cae a buscar por clasificacion_2 directamente.
+    """
+    from core.db import query_df, TABLE_DIM_ARTICULO, TABLE_PROMOCIONES
+    from core.loader import load_tipo_sheet
+
+    tipo = load_tipo_sheet(clasificacion_2)
+
+    if tipo:
+        sql = f"""
+            SELECT DISTINCT p.campania
+            FROM {TABLE_PROMOCIONES} p
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE dav.tipo_sheet = %(tipo)s
+            ORDER BY 1
+        """
+        params = {"tipo": tipo}
+        log.info("Buscando campañas históricas para tipo_sheet '%s'.", tipo)
+    else:
+        sql = f"""
+            SELECT DISTINCT p.campania
+            FROM {TABLE_PROMOCIONES} p
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE dav.clasificacion_2_sheet = %(clf2)s
+            ORDER BY 1
+        """
+        params = {"clf2": clasificacion_2}
+        log.warning("Sin tipo_sheet para '%s'. Buscando campañas por clasificacion_2.", clasificacion_2)
+
     try:
-        df = query_df(sql, {"clf2": clasificacion_2})
+        df = query_df(sql, params)
         return df["campania"].tolist() if not df.empty else []
     except Exception:
         return []
