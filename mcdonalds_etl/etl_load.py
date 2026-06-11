@@ -515,6 +515,110 @@ def parse_competencia(path: Path) -> list:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def parse_locales_dimension(path: Path) -> list:
+    """
+    Excel Dimensión_Locales.xlsx, hoja 'Open Stores (2)'.
+
+    Columnas (0-indexadas):
+      0  Site Name       → short_name
+      1  Open Date       → (ya en apertura_restaurantes, se omite)
+      6  Brand Extension → brand_extension
+      7  GPS lat         → lat
+      8  GPS lon         → lon
+      9  Last Reimage    → last_reimage_date (año o N/A)
+     14  City            → ciudad
+     15  State           → estado
+     16  Store Type      → store_type  (IS / FS / MS / FC)
+     17  DT Type         → dt_type     (Single / Double / None)
+     18  Nº SOKs         → num_soks    (self-order kiosks)
+     19  Bldg Size m2    → bldg_size_m2
+     20  Land Size m2    → land_size_m2
+     21  Mccafe Y/N      → tiene_mccafe
+     22  Play Place Y/N  → tiene_playplace
+
+    Retorna lista de (short_name, lat, lon, ciudad, estado, store_type,
+                      dt_type, num_soks, bldg_size_m2, land_size_m2,
+                      tiene_mccafe, tiene_playplace, brand_extension,
+                      last_reimage_date).
+    """
+    if not path.exists():
+        log.warning("Excel locales no encontrado: %s — se omite.", path)
+        return []
+
+    wb   = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    ws   = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    def _float_or_none(v):
+        try:
+            f = float(v)
+            return f if f == f else None   # NaN check
+        except (TypeError, ValueError):
+            return None
+
+    def _fix_gps(v):
+        """Corrige coordenadas con decimal faltante (ej: -25193188 → -25.193188)."""
+        f = _float_or_none(v)
+        if f is None:
+            return None
+        if abs(f) > 90:          # valor imposible como lat/lon → dividir
+            f = f / 1_000_000
+        return round(f, 7)
+
+    def _yn(v):
+        return str(v).strip().upper() == 'Y' if v is not None else False
+
+    def _int_or_none(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    def _str_clean(v, maxlen=200):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s[:maxlen] if s and s.upper() not in ('N/A', 'NONE', '') else None
+
+    records = []
+    for row in rows[1:]:                         # saltar header
+        if not any(x is not None for x in row):
+            continue
+        short_name = _str_clean(row[0], 10)
+        if not short_name:
+            continue
+
+        lat             = _fix_gps(row[7])
+        lon             = _fix_gps(row[8])
+        brand_ext       = _str_clean(row[6])
+        reimage_raw     = row[9]
+        last_reimage    = _int_or_none(reimage_raw)   # año, ej: 2018
+        ciudad          = _str_clean(row[14], 100)
+        estado          = _str_clean(row[15], 100)
+        store_type      = _str_clean(row[16], 5)
+        dt_type_raw     = _str_clean(row[17], 20)
+        dt_type         = dt_type_raw if dt_type_raw and dt_type_raw.lower() != 'none' else None
+        num_soks        = _int_or_none(row[18])
+        bldg_size       = _float_or_none(row[19])
+        land_size_raw   = row[20]
+        land_size       = _float_or_none(land_size_raw) if not isinstance(land_size_raw, str) else None
+        tiene_mccafe    = _yn(row[21])
+        tiene_playplace = _yn(row[22])
+
+        records.append((
+            short_name, lat, lon, ciudad, estado,
+            store_type, dt_type, num_soks,
+            bldg_size, land_size,
+            tiene_mccafe, tiene_playplace,
+            brand_ext, last_reimage,
+        ))
+
+    log.info("locales_dimension: %d registros (%d con GPS)",
+             len(records), sum(1 for r in records if r[1] is not None))
+    return records
+
+
 def main():
     log.info("=== McDonald's ETL iniciando ===")
 
@@ -537,6 +641,7 @@ def main():
              len(promociones), len(promo_excel), len(promo_csv))
 
     competencia = parse_competencia(EXCEL_COMPETENCIA)
+    locales     = parse_locales_dimension(EXCEL_LOCALES)
 
     conn = get_connection()
     try:
@@ -568,6 +673,15 @@ def main():
             conn, "competencia",
             ["local_numero", "short_name", "competidor", "radio_km", "tipo"],
             competencia,
+        )
+        truncate_and_insert(
+            conn, "locales_dimension",
+            ["short_name", "lat", "lon", "ciudad", "estado",
+             "store_type", "dt_type", "num_soks",
+             "bldg_size_m2", "land_size_m2",
+             "tiene_mccafe", "tiene_playplace",
+             "brand_extension", "last_reimage_date"],
+            locales,
         )
 
     except Exception as exc:

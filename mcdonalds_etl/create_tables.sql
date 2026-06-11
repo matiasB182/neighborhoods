@@ -68,13 +68,14 @@ CREATE TABLE IF NOT EXISTS {schema}.locales_dimension (
     lon                 NUMERIC(10,7),
     ciudad              VARCHAR(100),
     estado              VARCHAR(100),
-    store_type          VARCHAR(5),
-    dt_type             VARCHAR(10),
+    store_type          VARCHAR(5),      -- IS=Inline, FS=Free Standing, MS=Mall, FC=Food Court
+    dt_type             VARCHAR(10),     -- Single / Double / NULL=sin Automac
+    num_soks            SMALLINT,        -- cantidad de kioscos de autoservicio
+    bldg_size_m2        NUMERIC(8,2),    -- tamaño del edificio en m2
+    land_size_m2        NUMERIC(10,2),   -- tamaño del terreno en m2
     tiene_mccafe        BOOLEAN         NOT NULL DEFAULT FALSE,
     tiene_playplace     BOOLEAN         NOT NULL DEFAULT FALSE,
-    bldg_size_m2        NUMERIC(8,2),
-    land_size_m2        NUMERIC(10,2),
-    brand_extension     VARCHAR(200),
-    last_reimage_date   SMALLINT,
+    brand_extension     VARCHAR(200),    -- canales: Delivery, Desert Center, Walkup window, etc.
+    last_reimage_date   SMALLINT,        -- año del último reimage (renovación)
     PRIMARY KEY (short_name)
 ) DISTSTYLE ALL;
