@@ -161,19 +161,26 @@ def _campanias_similares(clasificacion_2: str, subtipo: str) -> list[str]:
     return []
 
 
-def _clf2s_de_campania(campania: str) -> list[str]:
-    """Devuelve las clasificacion_2_sheet de los productos de una campaña."""
+def _datos_campania(campania: str) -> tuple[list[int], list[str]]:
+    """
+    Retorna (codigos, clf2s) para una campaña:
+    - codigos: product IDs para filtrar fact_ventas directamente
+    - clf2s: clasificacion_2_sheet para filtrar el forecast
+    """
     from core.db import query_df, TABLE_PROMOCIONES, TABLE_DIM_ARTICULO
     sql = f"""
-        SELECT DISTINCT dav.clasificacion_2_sheet
+        SELECT DISTINCT p.codigo, dav.clasificacion_2_sheet
         FROM {TABLE_PROMOCIONES} p
-        JOIN {TABLE_DIM_ARTICULO} dav
+        LEFT JOIN {TABLE_DIM_ARTICULO} dav
             ON CAST(p.codigo AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
         WHERE p.campania = %(camp)s
-          AND dav.clasificacion_2_sheet IS NOT NULL
     """
     df = query_df(sql, {"camp": campania})
-    return df["clasificacion_2_sheet"].tolist() if not df.empty else []
+    if df.empty:
+        return [], []
+    codigos = df["codigo"].dropna().astype(int).tolist()
+    clf2s   = df["clasificacion_2_sheet"].dropna().unique().tolist()
+    return codigos, clf2s
 
 
 def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
@@ -199,35 +206,36 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         pm_hasta = fh[:7]
         campania = row["campania"]
 
-        # Clasificaciones exactas que participan en esta campaña
-        clf2s_campania = _clf2s_de_campania(campania)
-        if not clf2s_campania:
+        # Códigos y clasificaciones exactas de la campaña
+        codigos_camp, clf2s_camp = _datos_campania(campania)
+        if not codigos_camp:
             continue
 
-        placeholders = ", ".join([f"%(clf2_{i})s" for i in range(len(clf2s_campania))])
-        params_clf2 = {f"clf2_{i}": v for i, v in enumerate(clf2s_campania)}
-
-        # Ventas reales durante la campaña — solo los productos de la campaña
+        # Ventas reales: directo por producto ID en fact_ventas
+        ph_cod = ", ".join([f"%(cod_{i})s" for i in range(len(codigos_camp))])
+        params_v = {f"cod_{i}": v for i, v in enumerate(codigos_camp)}
         sql_ventas = f"""
-            SELECT SUM(fv.cantidad) AS unidades_reales
-            FROM {TABLE_FACT_VENTAS} fv
-            JOIN {TABLE_DIM_ARTICULO} dav
-                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
-            WHERE dav.clasificacion_2_sheet IN ({placeholders})
-              AND fv.fecha BETWEEN %(fd)s AND %(fh)s
+            SELECT SUM(cantidad) AS unidades_reales
+            FROM {TABLE_FACT_VENTAS}
+            WHERE CAST(producto AS VARCHAR) IN ({ph_cod})
+              AND fecha BETWEEN %(fd)s AND %(fh)s
         """
-        df_v = query_df(sql_ventas, {**params_clf2, "fd": fd, "fh": fh})
+        df_v = query_df(sql_ventas, {**params_v, "fd": fd, "fh": fh})
         unidades_reales = float(df_v["unidades_reales"].iloc[0] or 0)
         if unidades_reales == 0:
             continue
 
-        # Forecast para esas mismas clasificaciones
-        params_fc = {**params_clf2, "pm_desde": pm_desde, "pm_hasta": pm_hasta}
+        # Forecast por clasificacion_2_sheet de los productos de la campaña
+        if not clf2s_camp:
+            continue
+        ph_clf2 = ", ".join([f"%(clf2_{i})s" for i in range(len(clf2s_camp))])
+        params_fc = {f"clf2_{i}": v for i, v in enumerate(clf2s_camp)}
+        params_fc.update({"pm_desde": pm_desde, "pm_hasta": pm_hasta})
         sql_fc = f"""
             SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
                    COUNT(DISTINCT periodo) AS n_periodos
             FROM {TABLE_FORECAST}
-            WHERE clasificacion_2_sheet IN ({placeholders})
+            WHERE clasificacion_2_sheet IN ({ph_clf2})
               AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
         """
         df_fc = query_df(sql_fc, params_fc)
