@@ -21,7 +21,6 @@ CÁLCULO:
 
   Para optimizar: se evalúa cada cambio en pasos de 1% dentro del rango
   y se elige el que maximiza el objetivo.
-"""
   - breakeven    → % máximo de suba sin perder ingreso respecto al baseline
 """
 
