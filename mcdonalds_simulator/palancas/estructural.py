@@ -14,6 +14,17 @@ Parámetro zona (opcional):
   distrito  → compara dentro del mismo distrito
   dpto      → compara dentro del mismo departamento
   null      → compara contra todo el país (comportamiento original)
+
+CÁLCULO:
+  avg_con_canal  = promedio de ventas históricas de sucursales CON el canal
+  avg_sin_canal  = promedio de ventas históricas de sucursales SIN el canal
+  efecto         = (avg_con_canal - avg_sin_canal) / avg_sin_canal
+
+  unidades_simuladas = forecast × (1 + efecto)
+
+  Limitación: es una comparación cross-sectional, no causal. Las sucursales
+  con Automac pueden tener más ventas por otros factores (ubicación, tamaño).
+  La zona ayuda a reducir ese sesgo comparando sucursales más similares entre sí.
 """
 
 import logging

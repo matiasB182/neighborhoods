@@ -10,9 +10,26 @@ Subtipos:
 Canal (opcional): automac / delivery / app / restaurante
   → aplica el efecto solo a sucursales que tienen ese canal
 
-Lógica de descuento/2x1/precio_fijo:
-  Usa la misma elasticidad que la palanca de precio para calcular el impacto
-  en unidades, y calcula ingresos con el precio promocional.
+CÁLCULO (descuento / 2x1 / precio_fijo):
+  forecast_promo     = forecast_mensual / días_del_mes × días_de_la_promo
+  impacto_volumen    = cambio_pct × elasticidad
+  unidades_simuladas = forecast_promo × (1 + impacto_volumen)
+  ingreso_simulado   = unidades_simuladas × (precio_base × (1 + cambio_pct))
+
+  precio_fijo: cambio_pct = (precio_fijo - precio_promedio_histórico) / precio_promedio_histórico
+  2x1: cambio_pct = -0.50 (equivale a 50% de descuento en precio efectivo)
+
+CÁLCULO (producto_gratis):
+  forecast_promo     = forecast_mensual / días_del_mes × días_de_la_promo
+  unidades_simuladas = forecast_promo × (1 + uplift)
+
+  uplift CON fechas en la tabla de promos:
+    uplift = (ventas_reales_durante_promo - forecast_ese_período) / forecast_ese_período
+    promediado sobre todas las promos históricas similares con fechas disponibles
+
+  uplift SIN fechas (situación actual):
+    uplift = +10% supuesto conservador
+    (pendiente: cargar fechas en col D/E del Excel Códigos-Promo y re-correr ETL)
 """
 
 import logging

@@ -5,11 +5,22 @@ Lógica:
   1. Si hay un proxy_lanzamiento → usa su patrón histórico exacto.
   2. Si no → promedia el patrón de todos los lanzamientos históricos
      de la misma clasificacion_2.
-  3. Si tampoco hay → promedia todos los lanzamientos de cualquier categoría.
+  3. Si tampoco hay → promedia todos los lanzamientos del mismo tipo_sheet.
   4. Si nada → usa el patrón default conservador.
 
   El patrón es el uplift por mes relativo al lanzamiento:
   {0: +18%, 1: +12%, 2: +7%, ...}
+
+CÁLCULO:
+  Para cada lanzamiento histórico de referencia:
+    baseline      = promedio de ventas mensuales de la clasificacion_2
+    uplift_mes_n  = (ventas_mes_n - baseline) / baseline
+
+  Se promedian los uplift por mes relativo entre todos los lanzamientos de referencia.
+
+  unidades_simuladas[mes] = forecast[mes] × (1 + uplift[mes_relativo])
+
+  mes_relativo = 0 es el mes del lanzamiento, 1 el siguiente, etc. hasta 5.
 """
 
 import logging

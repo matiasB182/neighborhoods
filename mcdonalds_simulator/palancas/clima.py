@@ -7,6 +7,23 @@ Lógica:
   Productos calientes (café, combos) pueden subir levemente.
   La variacion_pct del YAML es el desvío respecto al clima promedio histórico.
   El efecto final = variacion_pct × coeficiente_clima[clasificacion_2].
+
+CÁLCULO:
+  efecto = variacion_pct × coeficiente_clima[clasificacion_2]
+
+  unidades_simuladas = forecast × (1 + efecto)
+
+  variacion_pct: definida por el usuario en el YAML.
+    -0.20 = clima 20% más frío/lluvioso que el promedio histórico
+    +0.20 = clima 20% más caluroso que el promedio histórico
+
+  coeficiente_clima: supuesto por categoría (no calculado de datos).
+    Postres/helados: muy sensibles al frío (-0.8 a -1.2)
+    Combos/hamburguesas: poco sensibles (±0.1)
+    Café/bebidas calientes: positivos con frío (+0.3)
+
+  Limitación: los coeficientes son supuestos de industria, no medidos
+  sobre datos históricos de McDonald's Paraguay.
 """
 
 import logging

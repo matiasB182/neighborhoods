@@ -8,6 +8,20 @@ Modos:
 Objetivos de optimización:
   - max_ingreso  → % de cambio que maximiza el ingreso total
   - max_unidades → % de cambio que maximiza las unidades vendidas (siempre baja el precio)
+
+CÁLCULO:
+  elasticidad = promedio de (Δ%_unidades / Δ%_precio) por producto de la categoría
+                calculada sobre cambios de precio reales en fact_ventas + precio_productos
+
+  impacto_volumen = cambio_pct × elasticidad
+  unidades_simuladas = forecast × (1 + impacto_volumen)
+
+  ingreso_base      = forecast × precio_promedio_ponderado
+  ingreso_simulado  = unidades_simuladas × (precio_promedio_ponderado × (1 + cambio_pct))
+
+  Para optimizar: se evalúa cada cambio en pasos de 1% dentro del rango
+  y se elige el que maximiza el objetivo.
+"""
   - breakeven    → % máximo de suba sin perder ingreso respecto al baseline
 """
 

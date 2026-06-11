@@ -13,6 +13,19 @@ Parámetro zona (opcional):
   distrito  → compara dentro del mismo distrito
   dpto      → compara dentro del mismo departamento
   null      → compara contra todo el país (comportamiento original)
+
+CÁLCULO:
+  similares      = sucursales con competidor a distancia_km ± 0.3km (de la tabla competencia)
+  avg_con_comp   = promedio de ventas históricas de esas sucursales
+  avg_sin_comp   = promedio de ventas históricas de sucursales sin competidor cercano
+  efecto         = (avg_con_comp - avg_sin_comp) / avg_sin_comp  [siempre ≤ 0]
+
+  unidades_simuladas[sucursal_afectada] = forecast × (1 + efecto)
+  unidades_simuladas[resto]             = forecast (sin cambio)
+
+  Fallback si no hay sucursales comparables:
+    efecto por banda de distancia (supuesto de industria):
+    < 300m → -15%, 300-600m → -10%, 600m-1km → -6%, 1-2km → -3%, > 2km → -1%
 """
 
 import logging
