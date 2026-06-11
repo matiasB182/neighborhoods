@@ -198,12 +198,29 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
             lines.append(f"el volumen base de esos {n_dias} día(s), y sobre ese número se aplica el efecto.")
             lines.append("")
 
-        if subtipo in ("descuento", "2x1", "precio_fijo"):
-            cambio = -0.50 if subtipo == "2x1" else float(palanca.get("cambio_pct", 0))
+        if subtipo == "2x1":
+            uplift    = float(df["promo_uplift"].iloc[0]) if "promo_uplift" in df.columns else 0
+            conf      = str(df["promo_confianza"].iloc[0]) if "promo_confianza" in df.columns else "?"
+            campanias_raw = str(df["promo_campanias"].iloc[0]) if "promo_campanias" in df.columns else ""
+            campanias = [c for c in campanias_raw.split("|||") if c]
+            lines.append(f"El uplift estimado del 2x1 es {uplift:+.1%} en unidades durante la promo.")
+            if conf in ("alta", "media"):
+                lines.append(f"Este número se midió comparando las ventas de campañas 2x1 históricas similares")
+                lines.append(f"contra el forecast del mismo período. Confianza: {conf}.")
+            else:
+                lines.append(f"No hay fechas de campañas 2x1 históricas cargadas para medir el impacto real.")
+                lines.append(f"Se usó un supuesto conservador de +40%.")
+            if campanias:
+                lines.append(f"")
+                lines.append(f"Campañas históricas encontradas para esta categoría:")
+                for camp in campanias:
+                    lines.append(f"  • {camp}")
+            lines.append("")
+
+        elif subtipo in ("descuento", "precio_fijo"):
+            cambio = float(palanca.get("cambio_pct", 0))
             if subtipo == "precio_fijo":
                 lines.append(f"Se fijó un precio promocional.")
-            elif subtipo == "2x1":
-                lines.append(f"Un 2x1 equivale a un 50% de descuento en el precio efectivo.")
             else:
                 lines.append(f"Se aplicó un descuento de {cambio:.0%} sobre el precio actual.")
 

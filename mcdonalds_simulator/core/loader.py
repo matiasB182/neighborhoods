@@ -24,22 +24,28 @@ from core.db import (
 def _score_fuzzy(query: str, candidato: str) -> float:
     """
     Mide qué tan bien el texto query coincide con el candidato.
-    Para cada palabra del query, busca la mejor coincidencia fuzzy entre
-    las palabras del candidato. Suma los scores — más alto = mejor match.
+    Retorna un score: más alto = mejor match.
+    Bonifica si el query completo o sus palabras aparecen como substring.
     """
     from difflib import SequenceMatcher
-    palabras_query     = [p.lower() for p in query.split() if len(p) > 1]
-    palabras_candidato = [p.lower() for p in candidato.split() if len(p) > 1]
+    q = query.lower().strip()
+    c = candidato.lower().strip()
+    # Máxima confianza: query completo está contenido en el candidato
+    if q in c:
+        return 100.0
+    palabras_query     = [p for p in q.split() if len(p) > 1]
+    palabras_candidato = [p for p in c.split() if len(p) > 1]
     if not palabras_query or not palabras_candidato:
-        return 0.0
-    total = 0.0
-    for pq in palabras_query:
-        mejor = max(
-            SequenceMatcher(None, pq, pc).ratio()
-            for pc in palabras_candidato
-        )
-        total += mejor
-    return total
+        return SequenceMatcher(None, q, c).ratio()
+    # Bonus por palabras del query que aparecen como substring en el candidato
+    substring_bonus = sum(1.0 for pq in palabras_query if pq in c) / len(palabras_query) * 2.0
+    # Score fuzzy palabra a palabra, normalizado entre 0 y 1
+    word_scores = [
+        max(SequenceMatcher(None, pq, pc).ratio() for pc in palabras_candidato)
+        for pq in palabras_query
+    ]
+    word_ratio = sum(word_scores) / len(word_scores)
+    return word_ratio + substring_bonus
 
 
 def resolver_clasificacion_2(texto: str) -> list[str]:
