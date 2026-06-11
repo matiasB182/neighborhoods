@@ -2,24 +2,23 @@
 Palanca: Promoción.
 
 Subtipos:
-  - descuento      → % de descuento sobre el precio (ej: -0.30 = 30% OFF)
-  - 2x1            → equivale a descuento del 50% en precio efectivo
-  - precio_fijo    → precio absoluto (ej: 15000 Gs), se convierte a % cambio
-  - producto_gratis → uplift en unidades sin cambio de precio
+  - descuento       → % de descuento sobre el precio (ej: -0.30 = 30% OFF)
+  - precio_fijo     → precio absoluto (ej: 15000 Gs), se convierte a % cambio
+  - 2x1             → uplift medido sobre campañas 2x1 históricas similares
+  - producto_gratis → uplift medido sobre campañas producto_gratis históricas similares
 
 Canal (opcional): automac / delivery / app / restaurante
   → aplica el efecto solo a sucursales que tienen ese canal
 
-CÁLCULO (descuento / 2x1 / precio_fijo):
+CÁLCULO (descuento / precio_fijo):
   forecast_promo     = forecast_mensual / días_del_mes × días_de_la_promo
   impacto_volumen    = cambio_pct × elasticidad
   unidades_simuladas = forecast_promo × (1 + impacto_volumen)
   ingreso_simulado   = unidades_simuladas × (precio_base × (1 + cambio_pct))
 
   precio_fijo: cambio_pct = (precio_fijo - precio_promedio_histórico) / precio_promedio_histórico
-  2x1: cambio_pct = -0.50 (equivale a 50% de descuento en precio efectivo)
 
-CÁLCULO (producto_gratis):
+CÁLCULO (2x1 / producto_gratis):
   forecast_promo     = forecast_mensual / días_del_mes × días_de_la_promo
   unidades_simuladas = forecast_promo × (1 + uplift)
 
@@ -28,7 +27,8 @@ CÁLCULO (producto_gratis):
     promediado sobre todas las promos históricas similares con fechas disponibles
 
   uplift SIN fechas (situación actual):
-    uplift = +10% supuesto conservador
+    2x1:             uplift = +40% supuesto conservador
+    producto_gratis: uplift = +10% supuesto conservador
     (pendiente: cargar fechas en col D/E del Excel Códigos-Promo y re-correr ETL)
 """
 
@@ -51,6 +51,7 @@ CANAL_A_COLUMNA = {
     "restaurante": "tiene_mostrador",
 }
 
+UPLIFT_2X1_DEFAULT             = 0.40
 UPLIFT_PRODUCTO_GRATIS_DEFAULT = 0.10
 
 
@@ -170,6 +171,27 @@ def _uplift_con_fechas(clasificacion_2: str, tipo_sheet: str | None) -> tuple[fl
     return None
 
 
+def _uplift_2x1(clasificacion_2: str,
+                fecha_desde_sim: str, fecha_hasta_sim: str) -> tuple[float, str, list[str]]:
+    """
+    1. Si hay campañas 2x1 históricas CON fechas → uplift medido.
+    2. Sin fechas → supuesto +40% sobre el forecast_promo.
+    Retorna (uplift, confianza, campañas).
+    """
+    from core.loader import load_tipo_sheet
+    tipo_sheet = load_tipo_sheet(clasificacion_2)
+    campanias  = _campanias_similares(clasificacion_2, "2x1")
+
+    resultado = _uplift_con_fechas(clasificacion_2, tipo_sheet)
+    if resultado:
+        uplift, confianza = resultado
+        return uplift, confianza, campanias
+
+    log.warning("Sin fechas de campañas 2x1 históricas — usando supuesto +%.0f%% sobre forecast diario.",
+                UPLIFT_2X1_DEFAULT * 100)
+    return UPLIFT_2X1_DEFAULT, "supuesto", campanias
+
+
 def _uplift_producto_gratis(clasificacion_2: str,
                              fecha_desde_sim: str, fecha_hasta_sim: str) -> tuple[float, str, list[str]]:
     """
@@ -233,11 +255,9 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
         mascara = mascara_clf2
 
     # ── Subtipos que usan elasticidad ──────────────────────────────────────
-    if subtipo in ("descuento", "2x1", "precio_fijo"):
+    if subtipo in ("descuento", "precio_fijo"):
 
-        if subtipo == "2x1":
-            cambio_pct = -0.50
-        elif subtipo == "precio_fijo":
+        if subtipo == "precio_fijo":
             precio_fijo = float(params["precio"])
             cambio_pct = _cambio_pct_para_precio_fijo(
                 clasificacion_2, precio_fijo, periodo_desde, periodo_hasta)
@@ -279,6 +299,28 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
         log.info("Promo '%s' (%s): %d días, precio %+.1f%% → volumen %+.1f%% [elasticidad %.2f, %s]",
                  clasificacion_2, subtipo, _dias_promo(fecha_desde, fecha_hasta),
                  cambio_pct * 100, impacto_volumen * 100, elasticidad, confianza)
+
+    # ── 2x1: uplift medido sobre campañas históricas ───────────────────────
+    elif subtipo == "2x1":
+        uplift, confianza, campanias = _uplift_2x1(clasificacion_2, fecha_desde, fecha_hasta)
+
+        df["forecast_promo"] = df.apply(
+            lambda r: _forecast_promo(r[col_base], r["periodo"], fecha_desde, fecha_hasta), axis=1)
+
+        df.loc[mascara,  "unidades_simuladas"] = df.loc[mascara,  "forecast_promo"] * (1 + uplift)
+        df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, "forecast_promo"]
+
+        df["promo_subtipo"]     = subtipo
+        df["promo_uplift"]      = uplift
+        df["promo_confianza"]   = confianza
+        df["promo_canal"]       = canal or "todos"
+        df["promo_campanias"]   = "|||".join(campanias) if campanias else ""
+        df["promo_fecha_desde"] = fecha_desde
+        df["promo_fecha_hasta"] = fecha_hasta
+        df["promo_dias"]        = _dias_promo(fecha_desde, fecha_hasta)
+        log.info("Promo '%s' 2x1: %d días, uplift %.1f%% [%s] — %d campañas similares",
+                 clasificacion_2, _dias_promo(fecha_desde, fecha_hasta),
+                 uplift * 100, confianza, len(campanias))
 
     # ── Producto gratis: uplift en unidades, precio sin cambio ─────────────
     elif subtipo == "producto_gratis":

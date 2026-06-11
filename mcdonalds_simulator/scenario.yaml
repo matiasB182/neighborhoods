@@ -164,18 +164,24 @@ palancas:
   # 3.2) PROMOCIÓN — 2x1
   #
   # ¿Qué impacto tendría un 2x1 en una categoría?
-  # (Llevás 2 unidades pagando 1 = precio efectivo por unidad baja 50%)
   #
   # FÓRMULA:
-  #   cambio_pct       = -0.50  (automático, no se configura)
-  #   impacto_volumen  = -0.50 × elasticidad_histórica
-  #   unidades_sim     = forecast_promo × (1 + impacto_volumen)
+  #   forecast_promo = forecast_mensual / días_del_mes × días_de_la_promo
+  #   uplift         = medido sobre campañas 2x1 históricas similares (mismo tipo de producto):
+  #                    (ventas_reales_promo - forecast_ese_período) / forecast_ese_período
+  #                    promediado sobre todas las campañas 2x1 comparables con fechas disponibles
+  #   unidades_sim   = forecast_promo × (1 + uplift)
+  #
+  #   Si no hay fechas cargadas en la tabla de promos históricas:
+  #   → uplift = +40% supuesto conservador  (se indica en el output como "supuesto")
   #
   # EJEMPLO PRÁCTICO:
   #   forecast_promo McFlurry Oreo (1 día viernes) = 200 unidades
-  #   elasticidad histórica                        = -1.2
-  #   → impacto_volumen = -0.50 × -1.2 = +0.60  (suben 60% las unidades)
-  #   → unidades_sim    = 200 × 1.60 = 320 unidades ese viernes
+  #   uplift promedio de campañas 2x1 McFlurry históricas = +45%
+  #   → unidades_sim = 200 × 1.45 = 290 unidades ese viernes
+  #
+  #   Sin fechas históricas (supuesto):
+  #   → uplift = +40% → unidades_sim = 200 × 1.40 = 280 unidades
   #
   # Ejemplos de uso:
   #   "2x1 McFlurry Oreo todos los viernes por Automac"
