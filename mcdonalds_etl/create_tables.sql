@@ -55,3 +55,26 @@ CREATE TABLE IF NOT EXISTS {schema}.apertura_restaurantes (
     tiene_centro_postres    BOOLEAN     NOT NULL DEFAULT FALSE,
     PRIMARY KEY (api_id)
 ) DISTSTYLE ALL;
+
+-- Excel "Dimensión Locales": info geográfica y física de cada local
+-- Complementa apertura_restaurantes, join por short_name.
+-- lat/lon: coordenadas GPS para cálculos de distancia (palanca competencia)
+-- ciudad/estado: para filtros de zona (barrio/distrito/dpto)
+-- store_type: IS=Inline Store, FS=Free Standing, MS=Mall Store, FC=Food Court
+-- dt_type: Single=1 calle Automac, Double=2 calles, None=sin Automac
+CREATE TABLE IF NOT EXISTS {schema}.locales_dimension (
+    short_name          VARCHAR(10)     NOT NULL,
+    lat                 NUMERIC(10,7),
+    lon                 NUMERIC(10,7),
+    ciudad              VARCHAR(100),
+    estado              VARCHAR(100),
+    store_type          VARCHAR(5),
+    dt_type             VARCHAR(10),
+    tiene_mccafe        BOOLEAN         NOT NULL DEFAULT FALSE,
+    tiene_playplace     BOOLEAN         NOT NULL DEFAULT FALSE,
+    bldg_size_m2        NUMERIC(8,2),
+    land_size_m2        NUMERIC(10,2),
+    brand_extension     VARCHAR(200),
+    last_reimage_date   SMALLINT,
+    PRIMARY KEY (short_name)
+) DISTSTYLE ALL;

@@ -38,6 +38,7 @@ SCHEMA               = os.environ.get("REDSHIFT_SCHEMA", "simulacion")
 EXCEL_PATH           = Path(os.environ.get("EXCEL_PATH", "./datos/DATOS.xlsx"))
 EXCEL_COMPETENCIA    = Path(os.environ.get("EXCEL_COMPETENCIA", "./datos/Competencia_por_local.xlsx"))
 CSV_CALENDARIO       = Path(os.environ.get("CSV_CALENDARIO", "./datos/Calendario_de_acciones_historico_MKTParaguay.csv"))
+EXCEL_LOCALES        = Path(os.environ.get("EXCEL_LOCALES", "./datos/Dimensión_Locales.xlsx"))
 
 DDL_PATH = Path(__file__).parent / "create_tables.sql"
 
