@@ -636,8 +636,24 @@ def main():
     wb.close()
 
     promo_csv   = parse_calendario_csv(CSV_CALENDARIO)
-    promociones = promo_excel + promo_csv
-    log.info("Promociones total: %d (Excel: %d | Calendario CSV: %d)",
+
+    # Mergear priorizando CSV (tiene fechas) sobre Excel (sin fechas).
+    # Redshift no enforcea PKs — si insertamos duplicados, se guardan todos
+    # y las queries pueden devolver cualquiera. Deduplicamos acá.
+    # Clave de dedup: (campania, codigo). El CSV va primero para que su fecha gane.
+    seen_promo: dict = {}
+    for r in promo_csv + promo_excel:
+        key = (r[0], r[1])  # (campania, codigo)
+        if key not in seen_promo:
+            seen_promo[key] = r
+        else:
+            # Si el existente no tiene fecha y este sí, reemplazar
+            existing = seen_promo[key]
+            if existing[3] is None and r[3] is not None:
+                seen_promo[key] = r
+    promociones = list(seen_promo.values())
+
+    log.info("Promociones total: %d (Excel: %d | Calendario CSV: %d, tras dedup)",
              len(promociones), len(promo_excel), len(promo_csv))
 
     competencia = parse_competencia(EXCEL_COMPETENCIA)
