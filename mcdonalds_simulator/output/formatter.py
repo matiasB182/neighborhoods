@@ -8,14 +8,23 @@ def resumen_consola(df: pd.DataFrame, escenario_nombre: str, palancas: list) -> 
         return "Sin datos para el escenario solicitado."
 
     col_sim      = "unidades_simuladas" if "unidades_simuladas" in df.columns else "forecast"
-    total_base   = df["forecast"].sum()
+    col_base_fmt = "forecast_promo" if "forecast_promo" in df.columns else "forecast"
+    total_base   = df[col_base_fmt].sum()
     total_sim    = df[col_sim].sum()
     delta_abs    = total_sim - total_base
     delta_pct    = delta_abs / total_base * 100 if total_base > 0 else 0
     n_sucursales = df["sucursal"].nunique()
     periodos     = sorted(df["periodo"].unique())
     n_periodos   = len(periodos)
-    periodo_str  = f"{periodos[0]} → {periodos[-1]}" if n_periodos > 1 else periodos[0]
+
+    # Para promos con fecha exacta, mostrar las fechas en lugar del periodo
+    fecha_desde = str(df["promo_fecha_desde"].iloc[0]) if "promo_fecha_desde" in df.columns else None
+    fecha_hasta = str(df["promo_fecha_hasta"].iloc[0]) if "promo_fecha_hasta" in df.columns else None
+    dias_promo  = int(df["promo_dias"].iloc[0]) if "promo_dias" in df.columns else None
+    if fecha_desde and fecha_hasta:
+        periodo_str = f"{fecha_desde} → {fecha_hasta}" if fecha_desde != fecha_hasta else fecha_desde
+    else:
+        periodo_str = f"{periodos[0]} → {periodos[-1]}" if n_periodos > 1 else periodos[0]
     clf2_str     = ", ".join(df["clasificacion_2"].unique()[:3])
     palanca_tipo = palancas[0].get("tipo", "?").upper() if palancas else "?"
 
@@ -51,9 +60,15 @@ def resumen_consola(df: pd.DataFrame, escenario_nombre: str, palancas: list) -> 
 
     # ── Resultados principales ─────────────────────────────────────────────
     lines.append(f"  RESULTADOS")
-    lines.append(f"  Unidades base/mes:    {total_base / n_periodos:>12,.0f}")
-    lines.append(f"  Unidades simul./mes:  {total_sim  / n_periodos:>12,.0f}")
-    lines.append(f"  Delta unidades:       {delta_abs  / n_periodos:>+12,.0f}  ({delta_pct:+.1f}%)")
+    if dias_promo:
+        divisor   = dias_promo
+        unid_label = f"promo ({dias_promo}d)"
+    else:
+        divisor    = n_periodos
+        unid_label = "mes"
+    lines.append(f"  Unidades base/{unid_label}:  {total_base / divisor:>12,.0f}")
+    lines.append(f"  Unidades simul./{unid_label}:{total_sim  / divisor:>12,.0f}")
+    lines.append(f"  Delta unidades:       {delta_abs  / divisor:>+12,.0f}  ({delta_pct:+.1f}%)")
 
     # Ingresos
     if "ingreso_base" in df.columns and df["ingreso_base"].notna().any():
@@ -173,17 +188,14 @@ def _construir_justificacion(df: pd.DataFrame, palancas: list,
         fecha_desde = palanca.get("fecha_desde")
         fecha_hasta = palanca.get("fecha_hasta")
 
-        # Bloque de duración si se especificaron fechas exactas
-        if fecha_desde and fecha_hasta:
-            from datetime import date
-            d_desde = date.fromisoformat(fecha_desde)
-            d_hasta = date.fromisoformat(fecha_hasta)
-            n_dias  = (d_hasta - d_desde).days + 1
-            fraccion = float(df["promo_fraccion_mes"].mean()) if "promo_fraccion_mes" in df.columns else None
-            lines.append(f"La promoción dura {n_dias} día(s): del {fecha_desde} al {fecha_hasta}.")
-            if fraccion is not None:
-                lines.append(f"Eso representa el {fraccion:.0%} del mes — el uplift se escala")
-                lines.append(f"proporcionalmente: solo esa fracción del forecast es afectada.")
+        # Duración de la promo
+        f_desde = str(df["promo_fecha_desde"].iloc[0]) if "promo_fecha_desde" in df.columns else None
+        f_hasta = str(df["promo_fecha_hasta"].iloc[0]) if "promo_fecha_hasta" in df.columns else None
+        n_dias  = int(df["promo_dias"].iloc[0]) if "promo_dias" in df.columns else None
+        if f_desde and f_hasta and n_dias:
+            lines.append(f"La promoción dura {n_dias} día(s): del {f_desde} al {f_hasta}.")
+            lines.append(f"El forecast mensual se divide por los días del mes para obtener")
+            lines.append(f"el volumen base de esos {n_dias} día(s), y sobre ese número se aplica el efecto.")
             lines.append("")
 
         if subtipo in ("descuento", "2x1", "precio_fijo"):

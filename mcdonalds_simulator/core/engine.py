@@ -43,10 +43,18 @@ def correr_escenario(config: dict) -> tuple[pd.DataFrame, str]:
         return pd.DataFrame(), nombre
 
     # Leer parámetros de la palanca activa
-    clf2_texto    = palanca.get("clasificacion_2")
-    sucursal      = palanca.get("sucursal")
-    periodo_desde = palanca["periodo_desde"]
-    periodo_hasta = palanca["periodo_hasta"]
+    clf2_texto = palanca.get("clasificacion_2")
+    sucursal   = palanca.get("sucursal")
+
+    # Para promoción: periodo se deduce de fecha_desde/fecha_hasta
+    if tipo == "promocion" and "fecha_desde" in palanca and palanca["fecha_desde"]:
+        fecha_desde   = str(palanca["fecha_desde"])
+        fecha_hasta   = str(palanca.get("fecha_hasta") or fecha_desde)
+        periodo_desde = fecha_desde[:7]   # YYYY-MM
+        periodo_hasta = fecha_hasta[:7]
+    else:
+        periodo_desde = palanca["periodo_desde"]
+        periodo_hasta = palanca["periodo_hasta"]
 
     # Resolver clasificacion_2 por similitud
     clf2_exactos = None

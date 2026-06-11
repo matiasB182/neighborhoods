@@ -37,31 +37,20 @@ CANAL_A_COLUMNA = {
 UPLIFT_PRODUCTO_GRATIS_DEFAULT = 0.10
 
 
-def _fraccion_mes(periodo: str, fecha_desde: str | None, fecha_hasta: str | None) -> float:
-    """
-    Calcula qué fracción del mes YYYY-MM cubre el rango fecha_desde..fecha_hasta.
-    Si las fechas no se especifican, retorna 1.0 (mes completo).
-    Si el rango no intersecta el mes, retorna 0.0.
-    """
-    if not fecha_desde or not fecha_hasta:
-        return 1.0
+def _dias_promo(fecha_desde: str, fecha_hasta: str) -> int:
+    return (date.fromisoformat(fecha_hasta) - date.fromisoformat(fecha_desde)).days + 1
 
+
+def _forecast_promo(forecast_mensual: float, periodo: str, fecha_desde: str, fecha_hasta: str) -> float:
+    """
+    Escala el forecast mensual a los días de la promo.
+    forecast_diario = forecast_mensual / días_del_mes
+    forecast_promo  = forecast_diario  * días_de_la_promo
+    """
     anio, mes = int(periodo[:4]), int(periodo[5:7])
-    dias_mes   = calendar.monthrange(anio, mes)[1]
-    inicio_mes = date(anio, mes, 1)
-    fin_mes    = date(anio, mes, dias_mes)
-
-    promo_desde = date.fromisoformat(fecha_desde)
-    promo_hasta = date.fromisoformat(fecha_hasta)
-
-    desde = max(promo_desde, inicio_mes)
-    hasta = min(promo_hasta, fin_mes)
-
-    if hasta < desde:
-        return 0.0
-
-    dias_promo = (hasta - desde).days + 1
-    return round(dias_promo / dias_mes, 6)
+    dias_mes  = calendar.monthrange(anio, mes)[1]
+    dias      = _dias_promo(fecha_desde, fecha_hasta)
+    return forecast_mensual * dias / dias_mes
 
 
 def _sucursales_con_canal(canal: str) -> set:
@@ -146,18 +135,18 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
     """
     params:
       subtipo: descuento | 2x1 | precio_fijo | producto_gratis
-      clasificacion_2: str (texto libre, se resuelve por similitud)
-      cambio_pct: float           (solo subtipo: descuento)
-      precio: float               (solo subtipo: precio_fijo)
-      producto_gratis: str        (solo subtipo: producto_gratis, descriptivo)
-      canal: str                  (opcional: automac / delivery / app / restaurante)
-      fecha_desde: str|None       (YYYY-MM-DD, opcional — si se omite = mes completo)
-      fecha_hasta: str|None       (YYYY-MM-DD, opcional — si se omite = mes completo)
+      clasificacion_2: str   (texto libre, se resuelve por similitud)
+      fecha_desde: str       (YYYY-MM-DD — inicio de la promo)
+      fecha_hasta: str       (YYYY-MM-DD — fin de la promo)
+      cambio_pct: float      (solo subtipo: descuento)
+      precio: float          (solo subtipo: precio_fijo)
+      producto_gratis: str   (solo subtipo: producto_gratis, descriptivo)
+      canal: str             (opcional: automac / delivery / app / restaurante)
     """
     subtipo     = params.get("subtipo", "descuento").lower()
     canal       = params.get("canal")
-    fecha_desde = params.get("fecha_desde")
-    fecha_hasta = params.get("fecha_hasta")
+    fecha_desde = str(params["fecha_desde"])
+    fecha_hasta = str(params.get("fecha_hasta") or fecha_desde)
 
     # Resolver clasificacion_2 por similitud
     clf2_texto = params.get("clasificacion_2", "")
@@ -195,7 +184,7 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
             cambio_pct = float(params["cambio_pct"])
 
         elasticidad, confianza = get_elasticidad(clasificacion_2)
-        impacto_volumen_total = cambio_pct * elasticidad
+        impacto_volumen = cambio_pct * elasticidad
 
         # Precio base para calcular ingresos
         precios = load_precio_clasificacion2(clasificacion_2, periodo_desde, periodo_hasta)
@@ -206,63 +195,52 @@ def aplicar(df: pd.DataFrame, params: dict, periodo_desde: str, periodo_hasta: s
         else:
             df["precio_base"] = None
 
-        # Escalar el impacto por fracción del mes que dura la promo
-        def _impacto_fila(periodo: str) -> float:
-            fraccion = _fraccion_mes(periodo, fecha_desde, fecha_hasta)
-            return impacto_volumen_total * fraccion
+        # Forecast base escalado a los días de la promo
+        df["forecast_promo"] = df.apply(
+            lambda r: _forecast_promo(r[col_base], r["periodo"], fecha_desde, fecha_hasta), axis=1)
 
-        impacto_serie = df["periodo"].map(_impacto_fila)
-        fraccion_serie = df["periodo"].map(
-            lambda p: _fraccion_mes(p, fecha_desde, fecha_hasta))
-
-        df.loc[mascara, "unidades_simuladas"] = (
-            df.loc[mascara, col_base] * (1 + impacto_serie[mascara]))
-        df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, col_base]
+        df.loc[mascara, "unidades_simuladas"]  = df.loc[mascara,  "forecast_promo"] * (1 + impacto_volumen)
+        df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, "forecast_promo"]
 
         df["precio_simulado"] = df.get("precio_base", pd.Series(dtype=float)) * (1 + cambio_pct)
-        df["ingreso_base"]     = df[col_base] * df.get("precio_base", pd.Series(dtype=float))
+        df["ingreso_base"]     = df["forecast_promo"] * df.get("precio_base", pd.Series(dtype=float))
         df["ingreso_simulado"] = df["unidades_simuladas"] * df["precio_simulado"]
 
-        df["promo_subtipo"]       = subtipo
-        df["promo_cambio_pct"]    = cambio_pct
-        df["promo_elasticidad"]   = elasticidad
-        df["promo_confianza"]     = confianza
-        df["promo_canal"]         = canal or "todos"
-        df["promo_fraccion_mes"]  = fraccion_serie
-        df["promo_fecha_desde"]   = fecha_desde or ""
-        df["promo_fecha_hasta"]   = fecha_hasta or ""
+        df["promo_subtipo"]     = subtipo
+        df["promo_cambio_pct"]  = cambio_pct
+        df["promo_elasticidad"] = elasticidad
+        df["promo_confianza"]   = confianza
+        df["promo_canal"]       = canal or "todos"
+        df["promo_fecha_desde"] = fecha_desde
+        df["promo_fecha_hasta"] = fecha_hasta
+        df["promo_dias"]        = _dias_promo(fecha_desde, fecha_hasta)
 
-        impacto_efectivo = impacto_volumen_total * (fraccion_serie.mean() if fecha_desde else 1.0)
-        log.info("Promo '%s' (%s): precio %+.1f%% → volumen %+.1f%% efectivo [fracción %.0f%%, elasticidad %.2f, %s]",
-                 clasificacion_2, subtipo, cambio_pct * 100, impacto_efectivo * 100,
-                 (fraccion_serie.mean() * 100) if fecha_desde else 100,
-                 elasticidad, confianza)
+        log.info("Promo '%s' (%s): %d días, precio %+.1f%% → volumen %+.1f%% [elasticidad %.2f, %s]",
+                 clasificacion_2, subtipo, _dias_promo(fecha_desde, fecha_hasta),
+                 cambio_pct * 100, impacto_volumen * 100, elasticidad, confianza)
 
     # ── Producto gratis: uplift en unidades, precio sin cambio ─────────────
     elif subtipo == "producto_gratis":
         uplift, confianza, campanias = _uplift_producto_gratis(clasificacion_2)
 
-        fraccion_serie = df["periodo"].map(
-            lambda p: _fraccion_mes(p, fecha_desde, fecha_hasta))
+        df["forecast_promo"] = df.apply(
+            lambda r: _forecast_promo(r[col_base], r["periodo"], fecha_desde, fecha_hasta), axis=1)
 
-        uplift_serie = uplift * fraccion_serie
-        df.loc[mascara, "unidades_simuladas"] = (
-            df.loc[mascara, col_base] * (1 + uplift_serie[mascara]))
-        df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, col_base]
+        df.loc[mascara, "unidades_simuladas"]  = df.loc[mascara,  "forecast_promo"] * (1 + uplift)
+        df.loc[~mascara, "unidades_simuladas"] = df.loc[~mascara, "forecast_promo"]
 
-        df["promo_subtipo"]      = subtipo
-        df["promo_uplift"]       = uplift
-        df["promo_confianza"]    = confianza
-        df["promo_canal"]        = canal or "todos"
-        df["promo_campanias"]    = "|||".join(campanias) if campanias else ""
-        df["promo_fraccion_mes"] = fraccion_serie
-        df["promo_fecha_desde"]  = fecha_desde or ""
-        df["promo_fecha_hasta"]  = fecha_hasta or ""
+        df["promo_subtipo"]     = subtipo
+        df["promo_uplift"]      = uplift
+        df["promo_confianza"]   = confianza
+        df["promo_canal"]       = canal or "todos"
+        df["promo_campanias"]   = "|||".join(campanias) if campanias else ""
+        df["promo_fecha_desde"] = fecha_desde
+        df["promo_fecha_hasta"] = fecha_hasta
+        df["promo_dias"]        = _dias_promo(fecha_desde, fecha_hasta)
         desc = params.get("producto_gratis", "")
-        uplift_efectivo = uplift * (fraccion_serie.mean() if fecha_desde else 1.0)
-        log.info("Promo '%s' producto gratis (%s): uplift %.1f%% efectivo [fracción %.0f%%, %s]",
-                 clasificacion_2, desc, uplift_efectivo * 100,
-                 (fraccion_serie.mean() * 100) if fecha_desde else 100, confianza)
+        log.info("Promo '%s' producto gratis (%s): %d días, uplift %.1f%% [%s]",
+                 clasificacion_2, desc, _dias_promo(fecha_desde, fecha_hasta),
+                 uplift * 100, confianza)
 
     else:
         log.error("Subtipo de promoción '%s' no reconocido.", subtipo)
