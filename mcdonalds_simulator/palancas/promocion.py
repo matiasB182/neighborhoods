@@ -228,7 +228,7 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         if unidades_reales == 0:
             continue
 
-        # Forecast para esas mismas clasificaciones
+        # Forecast para esas clasificaciones
         params_fc = {**params_clf2, "pm_desde": pm_desde, "pm_hasta": pm_hasta}
         sql_fc = f"""
             SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
@@ -241,8 +241,61 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         fc_total = float(df_fc["forecast_total"].iloc[0] or 0)
         n_meses  = int(df_fc["n_periodos"].iloc[0] or 1)
 
+        # Promo SKUs (ej: "Promo 2x1 Cuarto de Libra") no tienen forecast propio.
+        # Fallback: usar el forecast del tipo_sheet completo como baseline.
         if fc_total == 0:
-            continue
+            # Obtener tipo_sheet via dim_articulo para las clf2s de la campaña
+            sql_tipo = f"""
+                SELECT DISTINCT tipo_sheet FROM {TABLE_DIM_ARTICULO}
+                WHERE clasificacion_2_sheet IN ({ph_clf2})
+                  AND tipo_sheet IS NOT NULL AND tipo_sheet != 'PENDIENTE'
+                LIMIT 1
+            """
+            df_tipo = query_df(sql_tipo, params_clf2)
+            if df_tipo.empty:
+                continue
+            tipo_camp = df_tipo["tipo_sheet"].iloc[0]
+
+            # Clasificaciones del tipo_sheet que sí tienen forecast
+            sql_clf2_tipo = f"""
+                SELECT DISTINCT clasificacion_2_sheet FROM {TABLE_DIM_ARTICULO}
+                WHERE tipo_sheet = %(tipo)s AND clasificacion_2_sheet IS NOT NULL
+            """
+            df_clf2_tipo = query_df(sql_clf2_tipo, {"tipo": tipo_camp})
+            if df_clf2_tipo.empty:
+                continue
+            clf2s_tipo = df_clf2_tipo["clasificacion_2_sheet"].tolist()
+            ph_tipo = ", ".join([f"%(ctipo_{i})s" for i in range(len(clf2s_tipo))])
+            params_fc2 = {f"ctipo_{i}": v for i, v in enumerate(clf2s_tipo)}
+            params_fc2.update({"pm_desde": pm_desde, "pm_hasta": pm_hasta})
+            sql_fc2 = f"""
+                SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
+                       COUNT(DISTINCT periodo) AS n_periodos
+                FROM {TABLE_FORECAST}
+                WHERE clasificacion_2_sheet IN ({ph_tipo})
+                  AND periodo BETWEEN %(pm_desde)s AND %(pm_hasta)s
+            """
+            df_fc = query_df(sql_fc2, params_fc2)
+            fc_total = float(df_fc["forecast_total"].iloc[0] or 0)
+            n_meses  = int(df_fc["n_periodos"].iloc[0] or 1)
+
+            # También ajustar ventas al tipo_sheet completo para comparar manzanas con manzanas
+            sql_ventas2 = f"""
+                SELECT SUM(fv.cantidad) AS unidades_reales
+                FROM {TABLE_FACT_VENTAS} fv
+                JOIN {TABLE_DIM_ARTICULO} dav
+                    ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+                WHERE dav.tipo_sheet = %(tipo)s
+                  AND fv.fecha BETWEEN %(fd)s AND %(fh)s
+            """
+            df_v2 = query_df(sql_ventas2, {"tipo": tipo_camp, "fd": fd, "fh": fh})
+            unidades_reales = float(df_v2["unidades_reales"].iloc[0] or 0)
+
+            if fc_total == 0 or unidades_reales == 0:
+                continue
+
+            log.info("  (fallback tipo_sheet '%s': ventas=%d, fc_mensual=%.0f)",
+                     tipo_camp, unidades_reales, fc_total)
 
         # Forecast diario × días de campaña
         import calendar as cal
