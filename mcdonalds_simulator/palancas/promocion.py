@@ -261,7 +261,7 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         uplift = (unidades_reales - fc_periodo) / fc_periodo
         uplifts.append(uplift)
         log.info("Campaña '%s' (%s → %s) [%d clf2s]: uplift medido %+.1f%%",
-                 campania, fd, fh, len(clf2s_campania), uplift * 100)
+                 campania, fd, fh, len(clf2s_camp), uplift * 100)
 
     if not uplifts:
         return None
