@@ -116,7 +116,7 @@ def load_forecast(clasificacion_2: list | None, sucursal: str | None,
                      o None para traer todas.
     """
     conditions = ["periodo >= %(desde)s", "periodo <= %(hasta)s",
-                  "CAST(modelo AS VARCHAR) = CAST(mejor_modelo AS VARCHAR)"]
+                  "mejor_modelo IS NOT NULL"]
     params = {"desde": periodo_desde, "hasta": periodo_hasta}
 
     if clasificacion_2:
