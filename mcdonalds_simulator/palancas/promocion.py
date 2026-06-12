@@ -206,31 +206,30 @@ def _uplift_con_fechas(campanias: list[str], clasificacion_2: str,
         pm_hasta = fh[:7]
         campania = row["campania"]
 
-        # Códigos y clasificaciones exactas de la campaña
-        codigos_camp, clf2s_camp = _datos_campania(campania)
-        if not codigos_camp:
+        # Los codigos de la campaña identifican qué clasificaciones medir
+        _, clf2s_camp = _datos_campania(campania)
+        if not clf2s_camp:
             continue
 
-        # Ventas reales: directo por producto ID en fact_ventas
-        ph_cod = ", ".join([f"%(cod_{i})s" for i in range(len(codigos_camp))])
-        params_v = {f"cod_{i}": v for i, v in enumerate(codigos_camp)}
+        ph_clf2 = ", ".join([f"%(clf2_{i})s" for i in range(len(clf2s_camp))])
+        params_clf2 = {f"clf2_{i}": v for i, v in enumerate(clf2s_camp)}
+
+        # Ventas reales: todos los PLUs de esas clasificaciones (no solo los códigos del CSV)
         sql_ventas = f"""
-            SELECT SUM(cantidad) AS unidades_reales
-            FROM {TABLE_FACT_VENTAS}
-            WHERE CAST(producto AS VARCHAR) IN ({ph_cod})
-              AND fecha BETWEEN %(fd)s AND %(fh)s
+            SELECT SUM(fv.cantidad) AS unidades_reales
+            FROM {TABLE_FACT_VENTAS} fv
+            JOIN {TABLE_DIM_ARTICULO} dav
+                ON CAST(fv.producto AS VARCHAR) = CAST(dav.codigo AS VARCHAR)
+            WHERE dav.clasificacion_2_sheet IN ({ph_clf2})
+              AND fv.fecha BETWEEN %(fd)s AND %(fh)s
         """
-        df_v = query_df(sql_ventas, {**params_v, "fd": fd, "fh": fh})
+        df_v = query_df(sql_ventas, {**params_clf2, "fd": fd, "fh": fh})
         unidades_reales = float(df_v["unidades_reales"].iloc[0] or 0)
         if unidades_reales == 0:
             continue
 
-        # Forecast por clasificacion_2_sheet de los productos de la campaña
-        if not clf2s_camp:
-            continue
-        ph_clf2 = ", ".join([f"%(clf2_{i})s" for i in range(len(clf2s_camp))])
-        params_fc = {f"clf2_{i}": v for i, v in enumerate(clf2s_camp)}
-        params_fc.update({"pm_desde": pm_desde, "pm_hasta": pm_hasta})
+        # Forecast para esas mismas clasificaciones
+        params_fc = {**params_clf2, "pm_desde": pm_desde, "pm_hasta": pm_hasta}
         sql_fc = f"""
             SELECT SUM(COALESCE(forecast, unidades)) AS forecast_total,
                    COUNT(DISTINCT periodo) AS n_periodos
