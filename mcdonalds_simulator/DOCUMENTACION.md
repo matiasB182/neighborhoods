@@ -161,124 +161,18 @@ El simulador **lee** de Redshift. Estas son las tablas que consume (los nombres 
 
 ### Tablas que genera el propio simulador (cache de cálculos pesados)
 
-Estas son **las tablas que crea el simulador** (no vienen de la operación). Guardan el resultado de cálculos pesados que recorren años de ventas, para no rehacerlos en cada simulación. Se calculan una vez (offline) y después se leen rápido.
+Además de leer datos, el simulador **crea sus propias tablas**: guardan el resultado de cálculos pesados (recorren años de ventas) para no rehacerlos en cada simulación. Se calculan una vez por adelantado y después se leen al instante.
 
-A continuación, qué tiene cada una con un ejemplo de fila.
+Cada una se explica **en detalle (columnas + ejemplo) dentro de la palanca que la usa**, porque recién ahí, cuando entendés cómo se llega al resultado, tiene sentido qué representa cada número:
 
----
-
-#### `simulacion.whatif_elasticidades` — la sensibilidad al precio
-*La genera:* `core/elasticidades.py` + `core/elasticidad_eventos.py` · *La usa:* Precio, Promoción (descuento)
-
-Una fila por **categoría × segmento**. Es el insumo de toda decisión de precio.
-
-| Columna | Qué es |
-|---|---|
-| `clasificacion_2` | La categoría (ej. "big mac") |
-| `segmento` | Tipo de local (`todos`, `playland`, `mall`, …) |
-| `elasticidad_precio` | La elasticidad medida (negativa = sube precio, baja venta) |
-| `elasticidad_p10` / `elasticidad_p90` | La banda (rango probable) |
-| `n_productos` / `n_cambios` | Cuántos productos y cuántos cambios de precio se usaron |
-| `precio_desde` / `precio_hasta` | Rango de precios observado |
-| `confianza` | alta / media / baja |
-| `metodo` | `mensual` o `eventos` (event study) |
-
-**Ejemplo de fila:** `big mac | todos | −0.62 | −0.71 | −0.53 | 4 productos | 9 cambios | 28.000 → 42.000 Gs | alta | eventos`
-→ *"Subir 1% el precio del Big Mac baja las ventas ~0.62%, con buena evidencia (9 cambios de precio reales medidos)."*
-
----
-
-#### `simulacion.uplifts_medidos` — el efecto real de cada promo histórica
-*La genera:* el backtest (`backtest/promocion_bt.py`) · *La usa:* Promoción (2x1, producto gratis)
-
-Una fila por **campaña histórica** medida contra `fact_ventas`.
-
-| Columna | Qué es |
-|---|---|
-| `campania` | Nombre de la campaña (ej. "2x1 McFlurry viernes") |
-| `subtipo` | `2x1`, `producto_gratis`, … |
-| `nivel` | A qué nivel se midió (la categoría o la familia `tipo_sheet`) |
-| `fecha_desde` / `fecha_hasta` / `n_dias` | Cuándo y cuántos días duró |
-| `restringida` | Si era restringida (tarjeta/app/canal) o abierta a todos |
-| `diaria_promo` / `diaria_base` | Venta diaria durante la promo vs. baseline |
-| `uplift` | El efecto: `diaria_promo / diaria_base − 1` |
-| `uplift_total_local` | Cuánto subió el **total del local** (no solo la categoría) |
-| `uplift_hermanas` | Efecto en categorías parecidas (canibalización) |
-
-**Ejemplo de fila:** `2x1 McFlurry viernes | 2x1 | tipo_sheet 'POSTRES' | 2025-03-07 → 2025-03-07 | 1 día | abierta | 420/día | 290/día | +0.45 | +0.08 | −0.03`
-→ *"Ese 2x1 vendió 420 unidades/día vs. 290 normales: +45% de uplift. El total del local subió 8%, y las categorías hermanas cayeron 3% (parte se canibalizó)."*
-
----
-
-#### `simulacion.curvas_lanzamiento` — la curva de despegue de cada lanzamiento
-*La genera:* `core/curvas_lanzamiento.py` · *La usa:* Lanzamiento
-
-Una fila por **lanzamiento × mes_relativo** (mes 0 = lanzamiento, 1, 2, …).
-
-| Columna | Qué es |
-|---|---|
-| `lanzamiento` | Nombre del producto lanzado |
-| `tipo_sheet` / `clasificacion_2` | Familia y categoría |
-| `mes_relativo` | 0 = mes del lanzamiento, 1 = siguiente, … |
-| `share_tipo` | Qué fracción de la familia representó ese SKU ese mes |
-| `incrementalidad` | Qué parte de lo que vendió fue **neto** (no canibalización) |
-| `base_mensual_tipo` | Volumen base de la familia (para reescalar) |
-
-**Ejemplo de fila:** `McFlurry Braunitos | POSTRES | mcflurry | mes 0 | 0.22 | 0.60 | 50.000`
-→ *"En su primer mes, el McFlurry Braunitos representó el 22% de la familia Postres; el 60% de eso fue venta nueva, el resto canibalizó otros postres."*
-
----
-
-#### `simulacion.impacto_aperturas` y `…rampup_aperturas` — efecto de abrir un local
-*La genera:* `core/impacto_aperturas.py` · *La usa:* Competencia
-
-**`impacto_aperturas`** — cuánto resta una apertura a los locales cercanos, por banda de distancia (event study de aperturas propias):
-
-| Columna | Qué es |
-|---|---|
-| `banda_desde_km` / `banda_hasta_km` | El tramo de distancia (ej. 0–0.5 km) |
-| `efecto` | Cambio de ventas de los locales en esa banda |
-| `efecto_p10` / `efecto_p90` | La banda probable |
-| `n_pares` | Cuántas comparaciones apertura-local se usaron |
-| `confianza` | alta / media / baja |
-
-**Ejemplo de fila:** `0.0 → 0.5 km | −0.12 | −0.18 | −0.06 | 14 pares | media`
-→ *"Abrir un local a menos de 500 m le restó ~12% de ventas a los vecinos (medido sobre 14 casos)."*
-
-**`rampup_aperturas`** — cuánto tarda un local nuevo en llegar a su nivel de régimen: `mes_relativo | pct_nivel_regimen | n_locales`. Ejemplo: `mes 0 | 0.65 | 12` → *"En su primer mes, un local nuevo vende el 65% de lo que vendería ya maduro."*
-
----
-
-#### `simulacion.sensibilidad_clima` y `…clima_normales` — reacción al clima
-*La genera:* `core/sensibilidad_clima.py` · *La usa:* Clima
-
-**`sensibilidad_clima`** — cuánto reacciona cada categoría a temperatura y lluvia (regresión sobre ventas diarias reales):
-
-| Columna | Qué es |
-|---|---|
-| `clasificacion_2` | La categoría |
-| `beta_temp` | Cambio de ventas por cada +1 °C |
-| `beta_lluvia` | Cambio de ventas en día de lluvia vs. seco |
-| `t_temp` / `t_lluvia` | Significancia estadística (qué tan confiable es cada beta) |
-| `se_temp` / `se_lluvia` | Margen de error de cada beta (arma la banda) |
-| `n_obs` | Cuántas observaciones diarias se usaron |
-| `confianza` | alta / media / baja |
-
-**Ejemplo de fila:** `mcflurry | beta_temp +0.018 | t 4.2 | beta_lluvia −0.09 | t −3.1 | 8.400 obs | alta`
-→ *"Cada grado más de calor sube el McFlurry ~1.8%; un día de lluvia lo baja ~9%. Ambos efectos son estadísticamente sólidos."*
-
-**`clima_normales`** — el clima típico de cada mes: `mes | temp_media | pct_dias_lluvia`. Ejemplo: `6 (junio) | 18.5 °C | 30% días con lluvia`. Sirve para traducir "20% más frío" a grados y días concretos.
-
----
-
-#### `simulacion.whatif_resultados` — el historial de simulaciones
-*La genera:* `output/writer.py` · *La usa:* registro/auditoría
-
-Una fila por **categoría × sucursal × mes** de cada simulación que se corre y guarda. Columnas: `escenario_nombre`, `clasificacion_2`, `sucursal`, `periodo`, `forecast_base`, `forecast_simulado`, `delta_abs`, `delta_pct`, `ingreso_base`, `ingreso_simulado`, `palancas_json` (los parámetros usados).
-
-**Ejemplo de fila:** `"Subir 10% Big Mac" | big mac | (todas) | 2026-07 | 10.000 | 9.200 | −800 | −8% | 350.000.000 | 354.200.000 | [{"tipo":"precio",…}]`
-
----
+| Tabla | Qué guarda | Explicada en |
+|---|---|---|
+| `whatif_elasticidades` | La sensibilidad al precio de cada categoría | [§5 Elasticidad](#5-la-elasticidad-el-cálculo-central) |
+| `uplifts_medidos` | El efecto real de cada promo histórica | [§6.2 Promoción](#62-promoción) |
+| `curvas_lanzamiento` | La curva de despegue de cada lanzamiento | [§6.3 Lanzamiento](#63-lanzamiento) |
+| `impacto_aperturas` + `rampup_aperturas` | Efecto de abrir un local sobre los vecinos | [§6.5 Competencia](#65-competencia) |
+| `sensibilidad_clima` + `clima_normales` | Cuánto reacciona cada categoría al clima | [§6.6 Clima](#66-clima) |
+| `whatif_resultados` | El historial de simulaciones corridas | [§8 La salida](#8-la-salida-qué-entrega-el-simulador) |
 
 > **Importante para producción:** las tablas de cache (elasticidades, uplifts, clima, aperturas, curvas) deben existir **antes** de simular. Calcularlas tarda minutos (recorren años de ventas diarias), así que se corren por adelantado, **nunca dentro de una simulación interactiva**.
 
@@ -371,6 +265,29 @@ elasticidad_final = 0.71 × (−0.6)  +  0.29 × (−0.9)  =  −0.69
 → Se inclina hacia el −0.6 confiable, sin ignorar del todo la señal del segmento (que es algo más sensible). Así, un segmento con muestra chica y un número raro **no arruina** el resultado.
 
 > El nombre técnico de esto es *empirical Bayes shrinkage* ("encogimiento hacia la media"), pero la idea es simplemente: **menos datos = más caso al promedio general; más datos = más caso al número propio**.
+
+### 5.5 Dónde queda guardada: la tabla `whatif_elasticidades`
+
+Todo este cálculo se guarda en la tabla `simulacion.whatif_elasticidades`, **una fila por categoría × tipo de local**. Es lo que leen las palancas de precio y descuento cada vez que simulás.
+
+| Columna | Qué significa |
+|---|---|
+| `clasificacion_2` | La categoría (ej. "big mac") |
+| `segmento` | El tipo de local (`todos`, `playland`, `mall`, …) |
+| `elasticidad_precio` | La elasticidad medida (negativa = subir el precio baja la venta) |
+| `elasticidad_p10` / `elasticidad_p90` | El rango probable de esa elasticidad |
+| `n_productos` / `n_cambios` | Cuántos productos y cuántos cambios de precio reales se usaron para medirla |
+| `precio_desde` / `precio_hasta` | Entre qué precios se observó |
+| `confianza` | alta / media / baja |
+| `metodo` | Cómo se midió: `mensual` (cambios mes a mes) o `eventos` (la versión más fina, que separa el efecto del precio del de la temporada) |
+
+**Ejemplo de fila:**
+
+| clasificacion_2 | segmento | elasticidad | rango | datos usados | precios | confianza | método |
+|---|---|---|---|---|---|---|---|
+| big mac | todos | −0,62 | −0,71 a −0,53 | 4 productos, 9 cambios | 28.000 → 42.000 Gs | alta | eventos |
+
+Se lee: *"subir 1% el precio del Big Mac baja las ventas alrededor de 0,62%, con buena evidencia: 9 cambios de precio reales medidos."*
 
 ---
 
@@ -504,6 +421,30 @@ El **matching por día de semana** es clave: comparar un 2x1 de viernes contra e
 
 Misma lógica que el 2x1 (uplift medido), supuesto por defecto **+10%**.
 
+#### De dónde sale el "uplift medido": la tabla `uplifts_medidos`
+
+Para el 2x1 y el producto gratis, el efecto **no es un supuesto**: sale de medir cada promo histórica real contra lo que se habría vendido sin ella. Eso queda guardado en `simulacion.uplifts_medidos`, **una fila por campaña**.
+
+| Columna | Qué significa |
+|---|---|
+| `campania` | Nombre de la promo (ej. "2x1 McFlurry viernes") |
+| `subtipo` | `2x1`, `producto_gratis`, … |
+| `fecha_desde` / `fecha_hasta` / `n_dias` | Cuándo fue y cuántos días duró |
+| `restringida` | Si era solo con tarjeta/app/un canal, o abierta a todos |
+| `diaria_promo` | Cuánto vendió por día **durante** la promo |
+| `diaria_base` | Cuánto se vendía por día **normalmente** (mismos días de semana, semanas vecinas) |
+| `uplift` | El salto: `diaria_promo ÷ diaria_base − 1` |
+| `uplift_total_local` | Cuánto subió el **total del local** (no solo esa categoría) |
+| `uplift_hermanas` | Cuánto cambiaron las categorías parecidas (si dio negativo, parte de la venta se "robó" de ellas) |
+
+**Ejemplo de fila:**
+
+| campaña | tipo | cuándo | acceso | en promo | normal | uplift | total local | hermanas |
+|---|---|---|---|---|---|---|---|---|
+| 2x1 McFlurry viernes | 2x1 | 2025-03-07 (1 día) | abierta | 420/día | 290/día | **+45%** | +8% | −3% |
+
+Se lee: *"ese 2x1 vendió 420 McFlurry por día contra 290 normales (+45%). El local entero subió 8% ese día, y las categorías parecidas bajaron 3% (parte de la venta se trasladó de ellas)."*
+
 #### Acción `eliminar`
 
 Todas las promos aceptan `accion: eliminar`, que simula **cancelar** una promo que el forecast ya contempla (recurrente/planificada). En vez de sumar el efecto, lo **divide**: `factor = 1 / (1 + efecto)`. Responde *"¿cuánto perdemos si NO hacemos el 2x1 del día de la hamburguesa este año?"*.
@@ -514,7 +455,7 @@ Todas las promos aceptan `accion: eliminar`, que simula **cancelar** una promo q
 
 **Archivo:** `palancas/lanzamiento.py` · **Pregunta:** ¿cuánto rinde lanzar un producto nuevo?
 
-**Concepto:** un producto nuevo tiene un **pico inicial** (novedad, publicidad) que decae mes a mes hasta el nivel base. El sistema mide ese patrón de lanzamientos históricos reales (a nivel SKU) y lo aplica al forecast.
+**Concepto:** un producto nuevo tiene un **pico inicial** (novedad, publicidad) que decae mes a mes hasta el nivel base. El sistema mide ese patrón en lanzamientos históricos reales (producto por producto) y lo aplica al forecast.
 
 **Fórmula (con curvas medidas):**
 
@@ -538,30 +479,51 @@ mes 3:  +4%   mes 4:  +2%   mes 5: +1%
 
 **Ejemplo:** forecast McFlurry mayo (mes 0) = 5.000, uplift mes 0 = +18% → `5.000 × 1,18 = 5.900`. Forecast junio (mes 1) = 5.200, uplift +12% → `5.200 × 1,12 = 5.824`.
 
+#### De dónde sale la curva: la tabla `curvas_lanzamiento`
+
+El patrón de despegue se mide de los lanzamientos reales y queda guardado en `simulacion.curvas_lanzamiento`, **una fila por lanzamiento × mes** (mes 0 = el del lanzamiento, 1 = el siguiente…).
+
+| Columna | Qué significa |
+|---|---|
+| `lanzamiento` | El producto que se lanzó |
+| `clasificacion_2` / `tipo_sheet` | Su categoría y su familia (la familia agrupa varias categorías, ej. "Postres") |
+| `mes_relativo` | 0 = mes del lanzamiento, 1 = el siguiente, … |
+| `share_tipo` | Qué porción de su familia representó ese mes |
+| `incrementalidad` | Qué parte de lo que vendió fue **venta nueva** y no robada a otros productos |
+| `base_mensual_tipo` | El volumen normal de la familia (sirve para reescalar a otra categoría) |
+
+**Ejemplo de fila:**
+
+| lanzamiento | categoría | familia | mes | porción de la familia | venta nueva | base familia |
+|---|---|---|---|---|---|---|
+| McFlurry Braunitos | mcflurry | POSTRES | mes 0 | 22% | 60% | 50.000 |
+
+Se lee: *"en su primer mes, el McFlurry Braunitos fue el 22% de toda la familia Postres; el 60% de eso fue venta nueva, el resto le sacó ventas a otros postres."*
+
 ---
 
 ### 6.4 Estructural
 
 **Archivo:** `palancas/estructural.py` · **Pregunta:** ¿cuánto sube si agrego un canal/atributo a una sucursal? (Automac, Playland, McCafé, delivery, kiosco, etc.)
 
-**Método principal — matching emparejado:** cada local que **tiene** el atributo se compara contra los locales **sin** el atributo más parecidos (mismo tipo de local y tamaño en m² más cercano, hasta 3 vecinos).
+**Método principal — comparar contra locales "gemelos":** cada local que **ya tiene** el canal se compara contra los locales **sin** el canal que más se le parecen (mismo tipo de local y tamaño en m² más parecido, hasta 3 "gemelos"). La diferencia de ventas entre uno y los otros es el efecto estimado.
 
 ```
-para cada local t CON el canal:
-    vecinos   = hasta 3 locales sin el canal, mismo store_type, m² más parecido
-    efecto(t) = ventas(t) / promedio(ventas(vecinos)) − 1
-efecto = mediana de efecto(t) sobre todos los locales tratados
+para cada local CON el canal:
+    gemelos = hasta 3 locales SIN el canal, del mismo tipo y tamaño parecido
+    efecto  = ventas(local) ÷ promedio(ventas de sus gemelos) − 1
+efecto final = la mediana de todos esos efectos
 
-unidades_simuladas = forecast × (1 + efecto)
+unidades_simuladas = forecast × (1 + efecto final)
 ```
 
-El emparejamiento quita el sesgo grueso: los Playland están en locales más grandes y mejor ubicados, así que comparar contra "todos los demás" le atribuiría al Playland lo que es del local.
+Comparar contra "gemelos" en vez de "todos los demás" saca un sesgo importante: los Playland suelen estar en locales grandes y bien ubicados; si los comparáramos contra cualquier local, le atribuiríamos al Playland un mérito que en realidad es de la ubicación.
 
-**Fallback:** si no hay atributos físicos para emparejar, una comparación cruda (promedio con vs. promedio sin), opcionalmente restringida por zona (barrio/distrito/dpto).
+**Si no se puede emparejar** (faltan los datos físicos del local): se cae a una comparación simple — promedio de los que tienen el canal vs. promedio de los que no —, que se puede acotar a una zona (barrio/distrito/departamento) para comparar locales más parecidos entre sí.
 
-**Ejemplo:** locales con Automac venden 12.000/mes, sin Automac 9.000/mes → `efecto = (12.000 − 9.000)/9.000 = +33%`. Forecast del local sin Automac = 8.500 → `8.500 × 1,33 = 11.305`.
+**Ejemplo:** locales con Automac venden 12.000/mes, sin Automac 9.000/mes → `efecto = (12.000 − 9.000) ÷ 9.000 = +33%`. Forecast del local sin Automac = 8.500 → `8.500 × 1,33 = 11.305`.
 
-> **Límite siempre presente:** es **observacional, no causal**. Por eso la confianza llega como máximo a "media". Además, agregar un canal de venta suele **canibalizar** al mostrador, así que el total del local sube menos de lo que sugiere la comparación cruda.
+> **Límite importante (siempre se avisa):** esto es una **comparación, no un experimento**. Aunque emparejemos por tipo y tamaño, los locales con el canal pueden diferir en otras cosas que no medimos. Por eso la confianza llega como máximo a "media". Además, sumar un canal nuevo suele **quitarle ventas al mostrador** (canibalización), así que el total del local sube menos de lo que sugiere la comparación.
 
 ---
 
@@ -569,10 +531,11 @@ El emparejamiento quita el sesgo grueso: los Playland están en locales más gra
 
 **Archivo:** `palancas/competencia.py` · **Pregunta:** ¿cuánto caen las ventas de un local si abre un competidor cerca?
 
-**Orden de prioridad:**
-1. **Banda medida** (event study de las aperturas **propias** 2023–2025): cómo cambiaron las ventas de los locales cercanos a una apertura vs. los lejanos (control). *Caveat:* es competencia intramarca — otro McDonald's es el competidor "máximo", uno de otra marca probablemente impacte algo menos.
-2. **Cross-sectional:** locales que ya tienen competidor a distancia similar vs. los que no. Si sale ≥ 0 (no creíble: los locales con competidor cerca suelen estar mejor ubicados y vender más), se descarta.
-3. **Fallback por banda de distancia (supuestos):**
+**Cómo lo estima (usa el primer método que tenga datos):**
+
+1. **Lo medido en aperturas propias (2023–2025).** McDonald's abrió locales nuevos en esos años. El sistema miró cuánto bajaron las ventas de los locales que quedaron *cerca* de cada apertura, comparados con los que quedaron *lejos* (que sirven de referencia de "qué habría pasado igual sin la apertura"). *Ojo:* acá el "competidor" es otro McDonald's, que es el rival más duro posible; un competidor de otra marca probablemente pegue un poco menos.
+2. **Comparar locales que hoy ya conviven con un competidor cerca** contra los que no tienen ninguno. Tiene una trampa: los locales con un competidor al lado suelen estar en zonas de mucho movimiento y venden más *justamente por eso*, no a pesar del competidor. Cuando esta comparación da un resultado sin sentido (el competidor "sube" las ventas), se descarta.
+3. **Si no hay datos suficientes, supuestos por distancia:**
 
 | Distancia | Efecto |
 |---|---|
@@ -591,22 +554,48 @@ El efecto se acota a **≤ 0** (un competidor no puede subir las ventas).
 
 **Ejemplo:** competidor a 500 m, efecto −8%, forecast del local 11.500 → `11.500 × 0,92 = 10.580` (−920 unidades).
 
+#### De dónde sale lo medido: la tabla `impacto_aperturas`
+
+El efecto del método 1 (aperturas propias) queda guardado en `simulacion.impacto_aperturas`, **una fila por tramo de distancia**.
+
+| Columna | Qué significa |
+|---|---|
+| `banda_desde_km` / `banda_hasta_km` | El tramo de distancia (ej. 0 a 0,5 km) |
+| `efecto` | Cuánto cambiaron las ventas de los locales en ese tramo cuando abrió uno cerca |
+| `efecto_p10` / `efecto_p90` | El rango probable de ese efecto |
+| `n_pares` | Sobre cuántos casos (apertura + local cercano) se midió |
+| `confianza` | alta / media / baja |
+
+**Ejemplo de fila:**
+
+| tramo | efecto | rango | casos | confianza |
+|---|---|---|---|---|
+| 0 a 0,5 km | −12% | −18% a −6% | 14 | media |
+
+Se lee: *"abrir un local a menos de 500 m le restó alrededor de 12% de ventas a los vecinos, medido sobre 14 casos."*
+
+Hay una tabla hermana, `rampup_aperturas`, que mide otra cosa: **cuánto tarda un local nuevo en madurar**. Ejemplo de fila: `mes 0 → 65%` significa *"en su primer mes, un local nuevo vende el 65% de lo que venderá ya consolidado"*.
+
 ---
 
 ### 6.6 Clima
 
 **Archivo:** `palancas/clima.py` · **Pregunta:** ¿cómo afecta un mes más frío/caluroso/lluvioso a las ventas?
 
-**Método principal (sensibilidad medida):** cada categoría tiene betas medidos por regresión de ventas diarias × clima diario (controlando local, día de semana, mes, año y promos):
+**Método principal (lo medido en los datos):** para cada categoría, el sistema midió en años de ventas reales **cuánto cambian sus ventas con el clima**: cuánto suben o bajan por cada grado de más, y cuánto cambian en un día de lluvia. Esa medición aísla el efecto del clima de otras cosas que también mueven las ventas (el local, el día de semana, el mes, el año y las promos).
+
+El efecto se arma sumando las dos partes:
 
 ```
-efecto = beta_temp × Δtemp_°C + beta_lluvia × Δshare_lluvia
+efecto = (sensibilidad a la temperatura × cuántos grados cambió)
+       + (sensibilidad a la lluvia      × cuánto cambiaron los días de lluvia)
+
 unidades_simuladas = forecast × (1 + efecto)
 ```
 
-El escenario se expresa de dos formas (al menos una):
-- `variacion_pct`: eje combinado. −0.20 = "20% más frío/lluvioso que lo normal del período" (se traduce a °C y días de lluvia usando las normales históricas).
-- `delta_temp_c` y/o `delta_lluvia_pct`: magnitudes físicas directas (ej. −3 °C, +30% días de lluvia).
+El escenario se puede expresar de dos formas (al menos una):
+- `variacion_pct`: la forma simple. −0.20 = "20% más frío/lluvioso que lo normal del período" (el sistema lo traduce a grados y días de lluvia usando el clima típico del período).
+- `delta_temp_c` y/o `delta_lluvia_pct`: directamente en magnitudes físicas (ej. −3 °C, +30% días de lluvia).
 
 **Fallback (coeficientes supuestos de industria):**
 
@@ -626,6 +615,30 @@ efecto = variacion_pct × coeficiente
 - McFlurry: `−0.20 × −0.40 = −0.08` → caen 8% (3.000 → 2.760).
 - McCafé: `−0.20 × +0.20 = +0.04` → suben 4% (1.000 → 1.040).
 - Combos: `−0.20 × −0.05 = −0.01` → caen 1% (casi nada).
+
+#### De dónde sale lo medido: las tablas `sensibilidad_clima` y `clima_normales`
+
+`sensibilidad_clima` guarda, **una fila por categoría**, cuánto reacciona cada una al clima:
+
+| Columna | Qué significa |
+|---|---|
+| `clasificacion_2` | La categoría |
+| `beta_temp` | Cuánto cambian las ventas por cada grado (°C) de más |
+| `beta_lluvia` | Cuánto cambian en un día de lluvia vs. uno seco |
+| `t_temp` / `t_lluvia` | Qué tan confiable es cada número (más alto = más sólido) |
+| `se_temp` / `se_lluvia` | El margen de error de cada número (arma el rango probable) |
+| `n_obs` | Sobre cuántos días de venta se midió |
+| `confianza` | alta / media / baja |
+
+**Ejemplo de fila:**
+
+| categoría | por cada +1 °C | día de lluvia | confiabilidad | días medidos | confianza |
+|---|---|---|---|---|---|
+| mcflurry | +1,8% | −9% | sólida | 8.400 | alta |
+
+Se lee: *"cada grado más de calor sube el McFlurry alrededor de 1,8%; un día de lluvia lo baja unos 9%. Ambos efectos son sólidos."*
+
+`clima_normales` guarda el **clima típico de cada mes** (`mes | temperatura media | % de días con lluvia`), por ejemplo `junio | 18,5 °C | 30%`. Es lo que permite traducir un "20% más frío" a grados y días concretos.
 
 ---
 
