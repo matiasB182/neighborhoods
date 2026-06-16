@@ -1,0 +1,18 @@
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── Secretos / entorno ───────────────────────────────────────────
+.env
+
+# ── Datos generados por el simulador (regenerables) ──────────────
+output/resultados/
+output/backtest/
+output/*.csv
+output/*.txt
+_eventos_cache.csv
+
+# ── Exploración / scratch ────────────────────────────────────────
+_exploracion/
